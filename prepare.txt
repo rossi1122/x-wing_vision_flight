@@ -1,0 +1,6 @@
+1.打開terminal 輸入 roslaunch mavros apm.launch  #打開mvaros
+2.再打開另外一個 輸入 
+   python3 run_vision_flight.py --static (靜止版)
+   python3 run_vision_flight.py --moving(移動版)
+3.飛好下來按q+enter結束程式
+
