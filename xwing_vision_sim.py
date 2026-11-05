@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-xwing_vision_sim.py — 全視覺任務閉迴路模擬 (不需要 ROS / 飛機 / 雲台)
+xwing_vision_sim.py — 目標偵測版任務閉迴路模擬 (不需要 ROS / 飛機 / 雲台)
 ═══════════════════════════════════════════════════════════════════
-用【實飛同一套】程式: 狀態機 (dive_guidance, VISION_GUIDANCE) + VisionTracker
-(vision_guidance) + 參數 (xwing_vision_config / _common), 接上:
+用【實飛同一套】程式: 狀態機 (dive_guidance, 原封不動) + VisionSource
+(vision_guidance, 目標輸入來源) + 參數 (xwing_vision_config / _common), 接上:
   · 點質量飛機模型 (= hsu_realflight_true/xwing_virtual_sim.py)
   · 真車 + 模擬對方雲台相機 (vision_sim_camera.py), 30 Hz、80 ms 延遲、像素雜訊
 
-看的是: 什麼時候鎖定、推頭時「視覺水平距」和「真實水平距」差多少、
-俯衝角、對【真車】的 miss; 也可以跟虛擬目標控制 (xwing_virtual 做法) 比.
+看的是: 推頭時「偵測算出的水平距」和「真實水平距」差多少、俯衝角、
+對【真車】的 miss; 也可以跟目標來自虛擬軌跡 (xwing_virtual 做法) 比.
 
 車子情境 (--car):
   virtual   車剛好照虛擬目標開 (切 GUIDED 時在 WP4, 立刻 10 m/s)
@@ -18,9 +18,9 @@ xwing_vision_sim.py — 全視覺任務閉迴路模擬 (不需要 ROS / 飛機 /
   none      沒有車 / 辨識完全看不到 (測逾時中止)
 
 用法:
-  python3 xwing_vision_sim.py                       # 全視覺, 車 = slow
+  python3 xwing_vision_sim.py                       # 目標來自偵測, 車 = slow
   python3 xwing_vision_sim.py --car virtual
-  python3 xwing_vision_sim.py --compare             # 同一台車: 全視覺 vs 虛擬目標控制
+  python3 xwing_vision_sim.py --compare             # 同一台車: 偵測 vs 虛擬軌跡
   python3 xwing_vision_sim.py --dropout 0.3         # 30% 漏偵測
   python3 xwing_vision_sim.py --pitch-bias 1.0      # 雲台角度有 1° 沒校正的偏差
   python3 xwing_vision_sim.py --blackout 14:16      # t=14~16 s 資料鏈中斷
@@ -38,7 +38,7 @@ from xwing_vision_common import (build_gcfg, build_target, target_heading_deg,
 from dive_guidance import MissionStateMachine
 from virtual_source import VirtualSource, extrapolate_impact, miss_distance
 from attitude_time_history import AngleHistory
-from vision_guidance import VisionTracker
+from vision_guidance import VisionSource
 from vision_sim_camera import SimCar, SimGimbalCamera
 from xwing_uart_vision import gimbal_state_label
 
@@ -64,9 +64,9 @@ def simulate(cfg=None, vision=True, car_case='slow', guided_dist=613.0,
     cfg = cfg or XwingVisionConfig()
     start = cfg.MOVING_START_GPS
     heading = target_heading_deg(cfg, start)
-    gcfg = build_gcfg(cfg, True, cfg.PREDIVE_DIST_M, vision=vision)
+    gcfg = build_gcfg(cfg, True, cfg.PREDIVE_DIST_M)
     sm = MissionStateMachine(gcfg, verbose=verbose)
-    tracker = VisionTracker(cfg, control_camera(cfg, gcfg))
+    vsrc = VisionSource(cfg, control_camera(cfg, gcfg))
     target = build_target(cfg, True, start, start, heading, cfg.TARGET_SPEED_MPS, t0=0.0)
     with contextlib.redirect_stdout(io.StringIO()):
         virt = VirtualSource(cfg, gcfg, start[0], start[1], target)
@@ -93,14 +93,14 @@ def simulate(cfg=None, vision=True, car_case='slow', guided_dist=613.0,
     h_ref = h
     v_ref = cfg.SEARCH_SPEED_MPS
 
-    # 切 GUIDED 前先讓雲台追蹤 3 s (STANDBY 已送 '1')
+    # 切 GUIDED 前 3 s 開始模擬 (對方雲台自己在追蹤模式)
     t = -3.0
     armed = False
     traj = []
     events = []
     mode_prev = None
     t_done = None
-    res = {'lock': None, 'predive': None, 'dive': None, 'pullout': None,
+    res = {'first_det': None, 'predive': None, 'dive': None, 'pullout': None,
            'miss_car': None, 'miss_virtual': None, 'abort': '', 'max_V': V}
 
     while t < 120.0:
@@ -117,7 +117,7 @@ def simulate(cfg=None, vision=True, car_case='slow', guided_dist=613.0,
         dive_mode = (sm.mode == sm.DIVE)
         vf = virt.get_fields({'n': n, 'e': e, 'agl': h, 'theta_deg': theta,
                               'chi_deg': chi, 'gimbal_locked': dive_mode, 't': t})
-        vg_inp, _row = tracker.update(cam.latest(), t, t, poses, h, n, e)
+        vg, _row = vsrc.get_fields(cam.latest(), t, poses, h, n, e)
         cg, sg = math.cos(math.radians(gam)), math.sin(math.radians(gam))
         vn = V * cg * math.cos(math.radians(chi))
         ve = V * cg * math.sin(math.radians(chi))
@@ -126,22 +126,24 @@ def simulate(cfg=None, vision=True, car_case='slow', guided_dist=613.0,
                'gs_mps': V * cg, 'vn': vn, 've': ve, 'vd': vd,
                'yaw_true_deg': chi, 'pitch_deg': theta, 'roll_deg': 0.0,
                'ac_n': n, 'ac_e': e, **vf}
-        if vision:
-            inp.update(vg_inp)
+        if vision:                       # 同實飛: 目標輸入換成偵測, 沒偵測過先用虛擬目標帶路
+            g = dict(vg)
+            if g['tgt_n'] is None:
+                g['tgt_n'], g['tgt_e'] = vf['tgt_n'], vf['tgt_e']
+            inp.update(g)
         out = sm.update(inp) if armed else {'mode': 'SEARCH', 'pitch_cmd_deg': theta,
-                                            'heading_cmd_deg': chi, 'vis_locked': 0}
+                                            'heading_cmd_deg': chi}
         mode = out['mode']
         car_n, car_e, car_vn, car_ve = car.now(t)
         true_ground = math.hypot(car_n - n, car_e - e)
 
-        if out.get('vis_locked') and res['lock'] is None:
-            res['lock'] = {'t': t, 'true': true_ground,
-                           'vis': vg_inp.get('vis_ground_med_m')}
+        if vision and armed and vg['tgt_valid'] and res['first_det'] is None:
+            res['first_det'] = {'t': t, 'true': true_ground, 'vis': vg['ground_m']}
         if mode != mode_prev:
             events.append((t, mode, out.get('abort_reason', '')))
             if mode == 'PRE_DIVE':
                 res['predive'] = {'t': t, 'true': true_ground,
-                                  'vis': vg_inp.get('vis_ground_med_m'),
+                                  'vis': vg['ground_m'],
                                   'virt': vf['ground_m']}
             elif mode == 'DIVE':
                 res['dive'] = {'t': t, 'true': true_ground}
@@ -166,8 +168,8 @@ def simulate(cfg=None, vision=True, car_case='slow', guided_dist=613.0,
         traj.append({'t': t, 'mode': mode, 'n': n, 'e': e, 'agl': h, 'V': V,
                      'gamma': gam, 'theta': theta, 'chi': chi,
                      'car_n': car_n, 'car_e': car_e, 'true_ground': true_ground,
-                     'vis_ground': vg_inp.get('vis_ground_med_m'),
-                     'gimbal_pitch': cam.pitch, 'locked': out.get('vis_locked', 0)})
+                     'vis_ground': vg['ground_m'],
+                     'gimbal_pitch': cam.pitch, 'detected': int(vg['tgt_valid'])})
 
         # ══ 飛機模型 (= xwing_virtual_sim) ══
         if mode in ('SEARCH', 'DONE'):
@@ -228,17 +230,18 @@ def _f(x, fmt='{:.0f}'):
 
 def print_report(r):
     print("=" * 78)
-    print(f" 控制: {'全視覺' if r['vision'] else '虛擬目標 (xwing_virtual)'}   "
+    print(f" 目標來源: {'目標偵測' if r['vision'] else '虛擬軌跡 (xwing_virtual)'}   "
           f"車子情境: {r['car_case']}")
     print("=" * 78)
     for t, m, why in r['events']:
         print(f"  t={t:6.2f}s  → {m}" + (f"  ({why})" if why else ""))
-    if r['lock']:
-        lk = r['lock']
-        print(f" 鎖定: t={lk['t']:.2f}s  真實水平距 {lk['true']:.0f} m  視覺 {_f(lk['vis'])} m")
+    if r['first_det'] and r['vision']:
+        fd = r['first_det']
+        print(f" 第一次偵測 (撥 GUIDED 後): t={fd['t']:.2f}s  真實水平距 {fd['true']:.0f} m  "
+              f"偵測 {_f(fd['vis'])} m")
     if r['predive']:
         p = r['predive']
-        print(f" 推頭: t={p['t']:.2f}s  真實水平距 {p['true']:.0f} m  視覺 {_f(p['vis'])} m  "
+        print(f" 推頭: t={p['t']:.2f}s  真實水平距 {p['true']:.0f} m  偵測 {_f(p['vis'])} m  "
               f"虛擬目標 {p['virt']:.0f} m")
     if r['dive_gamma'] is not None:
         print(f" DIVE 平均航跡角 {r['dive_gamma']:.1f}°  最高空速 {r['max_V']:.1f} m/s  "
@@ -250,23 +253,26 @@ def print_report(r):
               f"對虛擬目標 {r['miss_virtual']['miss_total']:.1f} m")
     elif r['abort']:
         print(f" 沒有俯衝完成: {r['abort']}")
+    elif r['predive'] is None:
+        print(" 沒有推頭 (一直沒偵測到目標, 原邏輯 SEARCH 沒有逾時 → 由駕駛員切出 GUIDED)")
     print("=" * 78)
 
 
 def summary_row(name, r):
     p = r['predive'] or {}
     m = r['miss_car']['miss_total'] if r['miss_car'] else None
-    return (f"{name:<34}{_f(r['lock']['t'] if r['lock'] else None, '{:.1f}'):>7}"
+    return (f"{name:<34}{_f(r['first_det']['t'] if r['first_det'] else None, '{:.1f}'):>7}"
             f"{_f(p.get('true')):>8}{_f(p.get('vis')):>8}"
-            f"{_f(r['dive_gamma'], '{:.1f}'):>8}{_f(m, '{:.1f}'):>9}  {r['abort']}")
+            f"{_f(r['dive_gamma'], '{:.1f}'):>8}{_f(m, '{:.1f}'):>9}  "
+            f"{r['abort'] or ('沒有推頭' if r['predive'] is None else '')}")
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--car', choices=sorted(CAR_CASES), default='slow')
     ap.add_argument('--virtual-control', action='store_true',
-                    help='用虛擬目標控制 (xwing_virtual 做法) 跑同一台車')
-    ap.add_argument('--compare', action='store_true', help='全視覺 vs 虛擬目標控制')
+                    help='目標來自虛擬軌跡 (xwing_virtual 做法) 跑同一台車')
+    ap.add_argument('--compare', action='store_true', help='目標偵測 vs 虛擬軌跡')
     ap.add_argument('--all', action='store_true', help='跑全部情境, 印總表')
     ap.add_argument('--guided-dist', type=float, default=613.0)
     ap.add_argument('--dropout', type=float, default=0.0, help='漏偵測機率 0~1')
@@ -286,19 +292,19 @@ def main():
               verbose=args.verbose)
 
     if args.all:
-        print(f"{'情境':<34}{'鎖定s':>7}{'推頭真':>8}{'推頭視':>8}{'DIVEγ':>8}"
+        print(f"{'情境':<34}{'偵測s':>7}{'推頭真':>8}{'推頭偵':>8}{'DIVEγ':>8}"
               f"{'真車miss':>9}  中止原因")
-        cases = [('全視覺 / 車照虛擬目標開', dict(car_case='virtual')),
-                 ('全視覺 / 車慢 (11/04)', dict(car_case='slow')),
-                 ('全視覺 / 車沒開', dict(car_case='stopped')),
-                 ('全視覺 / 沒有車', dict(car_case='none')),
-                 ('全視覺 / 車慢 + 30% 漏偵測', dict(car_case='slow', dropout=0.3)),
-                 ('全視覺 / 車慢 + pitch 偏 1°', dict(car_case='slow', pitch_bias=1.0)),
-                 ('全視覺 / 車慢 + yaw 偏 3°', dict(car_case='slow', yaw_bias=3.0)),
-                 ('全視覺 / 車慢 + DIVE 中斷線 2 s', dict(car_case='slow', blackout=(5.5, 7.5))),
-                 ('虛擬控制 / 車照虛擬目標開', dict(car_case='virtual', vision=False)),
-                 ('虛擬控制 / 車慢 (11/04)', dict(car_case='slow', vision=False)),
-                 ('虛擬控制 / 車沒開', dict(car_case='stopped', vision=False))]
+        cases = [('偵測 / 車照虛擬目標開', dict(car_case='virtual')),
+                 ('偵測 / 車慢 (11/04)', dict(car_case='slow')),
+                 ('偵測 / 車沒開', dict(car_case='stopped')),
+                 ('偵測 / 沒有車', dict(car_case='none')),
+                 ('偵測 / 車慢 + 30% 漏偵測', dict(car_case='slow', dropout=0.3)),
+                 ('偵測 / 車慢 + pitch 偏 1°', dict(car_case='slow', pitch_bias=1.0)),
+                 ('偵測 / 車慢 + yaw 偏 3°', dict(car_case='slow', yaw_bias=3.0)),
+                 ('偵測 / 車慢 + DIVE 中斷線 2 s', dict(car_case='slow', blackout=(5.5, 7.5))),
+                 ('虛擬軌跡 / 車照虛擬目標開', dict(car_case='virtual', vision=False)),
+                 ('虛擬軌跡 / 車慢 (11/04)', dict(car_case='slow', vision=False)),
+                 ('虛擬軌跡 / 車沒開', dict(car_case='stopped', vision=False))]
         for name, c in cases:
             k = dict(kw, **c)
             print(summary_row(name, simulate(**k)))

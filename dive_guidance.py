@@ -66,22 +66,6 @@ class GuidanceConfig:
     PREDIVE_DIST_M = 200.0          # target_dist 模式門檻 (30° 幾何: 120m 高→~208m)
     DIVE_USE_REAL_CAMERA = False  # run_vision_flight 固定設 True
 
-    # ★ 2026/11 全視覺導引 (xwing_vision_flight 設 True; 其他主程式維持 False = 原行為).
-    #   SEARCH: 鎖定前朝虛擬目標飛 (只當帶路), 連續偵測到目標 → 鎖定 → 朝視覺方位飛
-    #   觸發:   視覺水平距 (近 5 筆中位數) ≤ PREDIVE_DIST_M 且目標在機頭前方
-    #   PRE_DIVE / DIVE: 航向 / 瞄準只用視覺; 偵測中斷超過時限就中止.
-    #   inp 欄位: vis_age_s (距最後一筆有效偵測的取像時刻, 秒; 沒有 = None),
-    #             vis_hits, vis_bearing_deg, vis_bearing_off_deg, vis_ground_med_m
-    VISION_GUIDANCE = False
-    VISION_ACQUIRE_HITS = 10          # 最近一個視窗內 (VisionTracker) 有幾筆有效偵測才算鎖定
-    VISION_MEAS_MAX_AGE_S = 0.5       # 偵測多舊以內算「現在看得到」
-    VISION_SEARCH_TIMEOUT_S = 25.0    # ARM 後這麼久還沒鎖定 → 結束這趟 (平飛交還)
-    VISION_LOST_SEARCH_S = 5.0        # SEARCH 鎖定後跟丟這麼久 → 結束這趟 (期間保持最後方位)
-    VISION_LOST_PREDIVE_S = 1.5       # PRE_DIVE 跟丟這麼久 → ABORT 拉起
-    VISION_LOST_DIVE_S = 1.0          # DIVE 跟丟這麼久 → ABORT 拉起
-    VISION_PREDIVE_MAX_OFF_DEG = 10.0 # 目標偏離機頭超過此角度不推頭 (先轉正)
-    VISION_PREDIVE_MIN_DIST_M = 300.0 # 鎖定時已比此值近 → 俯衝會太陡, 結束這趟
-
     # ★ 地面測試用開關: SEARCH 是否「朝目標飛」還是「保持當下機頭」.
     #   False (預設, 實飛): heading_cmd = 指向目標方位角 (正常行為, 朝目標直飛).
     #   True  (地面測試):   heading_cmd = 當下機頭 → 切 GUIDED 不打 yaw, 純平飛.
@@ -550,9 +534,6 @@ class MissionStateMachine:
         self._last_target_valid_t = None
         self._fpv_settled = False
         self._drift_frames = 0
-        # 全視覺 (VISION_GUIDANCE): 是否已鎖定目標、SEARCH 開始時刻
-        self._vis_locked = False
-        self._search_t0 = None
 
         # DIVE 相機: body_zero → R_bc = R_g2c·Ry(tilt), 已知常數
         tilt = math.radians(cfg.GIMBAL_DIVE_TILT_BODY_DEG)
@@ -592,15 +573,6 @@ class MissionStateMachine:
         self._abort_t0 = t
         self.mode = self.ABORT
         self._log(f"★★ ABORT: {reason} — 拉起 {self.cfg.ABORT_HOLD_S}s 後釋放控制權")
-
-    def _end_mission(self, reason, t):
-        """還沒推頭就放棄這趟 (全視覺 SEARCH): 不拉起, 直接 DONE = 交 TECS 平飛."""
-        if self.mode in (self.ABORT, self.DONE):
-            return
-        self._abort_reason = reason
-        self.mode = self.DONE
-        self._log(f"★★ 結束這趟: {reason} — 還沒推頭, 交回 TECS 平飛 "
-                  f"(切回 AUTO 繞回來再撥 GUIDED)")
 
     # ------------------------------------------------------------------
     def update(self, inp):
@@ -669,7 +641,6 @@ class MissionStateMachine:
             'pid_compute_ms': round(self.pid.last_compute_ms, 3),
             'mission_armed': int(self.mission_armed),
             'abort_reason': self._abort_reason,
-            'vis_locked': int(self._vis_locked),
         }
 
     # ------------------------------------------------------------------
@@ -703,11 +674,6 @@ class MissionStateMachine:
             ac_e = inp.get('ac_e', 0.0) or 0.0
             self._heading_cmd = math.degrees(
                 math.atan2(tgt_e - ac_e, tgt_n - ac_n))
-
-        if cfg.VISION_GUIDANCE:
-            # 鎖定前上面的「朝虛擬目標」只當帶路; 鎖定後改由視覺決定航向與推頭
-            self._search_vision(inp, t, agl)
-            return
 
         if agl is None or agl < cfg.ENTRY_MIN_AGL_M:
             return
@@ -761,64 +727,12 @@ class MissionStateMachine:
                       f"{self._predive_slant_threshold(max(agl, cfg.BENCH_GEOMETRY_AGL_M)):.0f}m, "
                       f"AGL={agl:.0f}m) 開始壓機頭")
 
-    def _search_vision(self, inp, t, agl):
-        """全視覺 SEARCH (已 ARM、GUIDED). 鎖定 → 航向 = 視覺方位 → 距離到就推頭."""
-        cfg = self.cfg
-        if self._search_t0 is None:
-            self._search_t0 = t
-        age = inp.get('vis_age_s')
-        fresh = age is not None and age <= cfg.VISION_MEAS_MAX_AGE_S
-
-        if not self._vis_locked:
-            if fresh and (inp.get('vis_hits') or 0) >= cfg.VISION_ACQUIRE_HITS:
-                self._vis_locked = True
-                d, off = inp.get('vis_ground_med_m'), inp.get('vis_bearing_off_deg')
-                self._log(f"★ 視覺鎖定目標 (最近有效 {inp.get('vis_hits')} 筆"
-                          + (f", 水平距 {d:.0f}m" if d is not None else "")
-                          + (f", 偏機頭 {off:+.1f}°" if off is not None else "")
-                          + ") — 改朝目標方位飛")
-            elif t - self._search_t0 > cfg.VISION_SEARCH_TIMEOUT_S:
-                self._end_mission('VISION_NOT_FOUND', t)
-                return
-            else:
-                return                      # 還沒鎖定: 航向維持帶路 (虛擬目標方位)
-
-        if age is None or age > cfg.VISION_LOST_SEARCH_S:
-            self._end_mission('VISION_LOST_SEARCH', t)
-            return
-        if inp.get('vis_bearing_deg') is not None:
-            self._heading_cmd = inp['vis_bearing_deg']   # 跟丟期間 = 最後一筆方位
-        if not fresh or agl is None or agl < cfg.ENTRY_MIN_AGL_M:
-            return
-
-        d = inp.get('vis_ground_med_m')
-        off = inp.get('vis_bearing_off_deg')
-        if d is None:
-            return
-        if d < cfg.VISION_PREDIVE_MIN_DIST_M:
-            self._end_mission(f'VISION_TOO_CLOSE_{d:.0f}m', t)
-            return
-        if (d <= cfg.PREDIVE_DIST_M and off is not None
-                and abs(off) <= cfg.VISION_PREDIVE_MAX_OFF_DEG):
-            self.mode = self.PRE_DIVE
-            self._predive_t0 = t
-            self.tecs_resend = True          # 同其他觸發模式: TECS 先切到拉平高度
-            p = inp.get('pitch_deg')
-            self._pitch_cmd = p if p is not None else self._pitch_cmd
-            self._log(f"→ PRE_DIVE (視覺水平距 {d:.0f}m ≤ {cfg.PREDIVE_DIST_M:.0f}m, "
-                      f"偏機頭 {off:+.1f}°, AGL={agl:.0f}m) 開始壓機頭")
-
     def _update_predive(self, inp, t, agl):
         cfg = self.cfg
         if t - self._predive_t0 > cfg.PREDIVE_TIMEOUT_S:
             self._trigger_abort('PREDIVE_TIMEOUT', t)
             return
-        if cfg.VISION_GUIDANCE:
-            age = inp.get('vis_age_s')
-            if age is None or age > cfg.VISION_LOST_PREDIVE_S:
-                self._trigger_abort('VISION_LOST_PREDIVE', t)
-                return
-        elif (self._last_target_valid_t is None
+        if (self._last_target_valid_t is None
                 or t - self._last_target_valid_t > cfg.ABORT_TARGET_LOST_S):
             self._trigger_abort('TARGET_LOST_PREDIVE', t)
             return
@@ -842,12 +756,9 @@ class MissionStateMachine:
             self._pushover_started = True
             self._log(f"PRE_DIVE PUSH 直接命令 {theta_target:.1f}°")
         self._pitch_cmd = theta_target          # 壓多快飛控決定
-        # 橫向: 指向瞄準點 (全視覺: 視覺方位, 跟丟期間保持最後一筆)
+        # 橫向: 指向瞄準點
         tgt_n, tgt_e = inp.get('tgt_n'), inp.get('tgt_e')
-        if cfg.VISION_GUIDANCE:
-            if inp.get('vis_bearing_deg') is not None:
-                self._heading_cmd = inp['vis_bearing_deg']
-        elif tgt_n is not None:
+        if tgt_n is not None:
             an, ae = tgt_n, tgt_e
             if cfg.DIVE_TARGET_LEAD and agl is not None:
                 an, ae = lead_aim_point(inp, agl)
@@ -861,9 +772,8 @@ class MissionStateMachine:
                      or (p_now is not None
                          and p_now <= theta_target
                          + cfg.PREDIVE_HANDOFF_PITCH_TOL_DEG))
-        _seen = (bool(inp.get('real_control_detected', False))
-                 if cfg.VISION_GUIDANCE else inp.get('bbox_detected', True))
-        if self._pushover_started and _pitch_ok and _seen:
+        if (self._pushover_started and _pitch_ok
+                and inp.get('bbox_detected', True)):
             self._enter_dive(inp, t, dep_now if dep_now is not None else 0.0)
         return
 
@@ -921,11 +831,6 @@ class MissionStateMachine:
                  or t - self._last_target_valid_t > cfg.ABORT_TARGET_LOST_S)):
             self._trigger_abort('TARGET_LOST_DIVE', t)
             return
-        if cfg.VISION_GUIDANCE:
-            age = inp.get('vis_age_s')
-            if age is None or age > cfg.VISION_LOST_DIVE_S:
-                self._trigger_abort('VISION_LOST_DIVE', t)
-                return
 
         # ── FPV settle (虛擬預設 0 → 跳過) ──
         if not self._fpv_settled:

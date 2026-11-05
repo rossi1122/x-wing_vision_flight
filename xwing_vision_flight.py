@@ -1,34 +1,34 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-xwing_vision_flight.py — X-wing 全視覺實飛主程式
+xwing_vision_flight.py — X-wing 目標偵測版實飛主程式
 ═══════════════════════════════════════════════════════════════════
-由 hsu_realflight_true/xwing_virtual_flight.py (2026/11/04 實飛版) 改出來:
-飛法、參數、重複撥 GUIDED、啟動檢查、雲台 UART 全部相同, 差別只有
-「目標在哪裡」改由對方雲台相機決定:
+由 hsu_realflight_true/xwing_virtual_flight.py (2026/11/04 實飛版) 改出來.
+飛法、參數、狀態機與判斷邏輯、重複撥 GUIDED、啟動檢查、雲台 UART 全部相同,
+★ 唯一的差別: 狀態機的「目標」輸入來源
+      原本: 虛擬軌跡 (virtual_source.VirtualSource)
+      現在: 對方雲台的目標偵測 (vision_guidance.VisionSource)
 
     MAVROS 姿態 (含取像時刻的姿態歷史) ─┐
-    對方雲台 UART (目標像素 + 對地 pitch) ─┴→ VisionTracker (vision_guidance)
-        → 車的方位 / 水平距 / 補償後像素 → MissionStateMachine (VISION_GUIDANCE)
-        → AttitudeBridge → 飛控
+    對方雲台 UART (目標像素 + 對地 pitch) ─┴→ VisionSource
+        → tgt_n/tgt_e、predive_dist_m、bbox_u/v ... (與虛擬目標同名欄位)
+        → MissionStateMachine (dive_guidance, 原封不動) → AttitudeBridge → 飛控
 
-任務:
+任務 (同 xwing_virtual):
   AUTO 240 m / 30 m/s → WP3 撥 GUIDED = 任務開始
-  → SEARCH: 還沒看到車 → 朝虛擬目標 (WP4) 飛, 只當帶路
-            連續 10 筆偵測到車 → 鎖定 → 航向 = 視覺方位
-  → 視覺水平距 ≤ 415.69 m 且車在機頭前方 10° 內 → PRE_DIVE 直接命令 pitch −30°
-  → pitch 到 −27° 內且看得到車 → DIVE: 補償後真實像素 PID 修 pitch / 方向舵
+  → SEARCH: 飛控 43002 朝目標位置飛 (還沒偵測到車前朝虛擬目標帶路)
+  → 到目標水平距 ≤ 415.69 m → PRE_DIVE 直接命令 pitch −30°
+  → pitch 到 −27° 內 (且看得到目標) → DIVE: 目標在畫面的位置 PID 修 pitch / 方向舵
   → AGL ≤ 140 m (或空速 ≥ 60 m/s) → PULLOUT → DONE: TECS 140 m / 30 m/s
-  看不到車: SEARCH 25 s 沒鎖定 / 鎖定後跟丟 5 s → 平飛交還;
-            PRE_DIVE 跟丟 1.5 s / DIVE 跟丟 1 s → 拉起中止.
+  PRE_DIVE / DIVE 看不到目標 > 1.5 s → ABORT (原 ABORT_TARGET_LOST_S)
 
 用法:
-  python3 xwing_vision_flight.py                       # 全視覺 (預設)
-  python3 xwing_vision_flight.py --virtual-control     # 退回 xwing_virtual 做法 (虛擬目標控制, 視覺只記錄)
+  python3 xwing_vision_flight.py                       # 目標來自偵測 (預設)
+  python3 xwing_vision_flight.py --virtual-control     # 目標來自虛擬軌跡 (= xwing_virtual, 偵測只記錄)
   python3 xwing_vision_flight.py --vision-port /dev/ttyUSB0
-  python3 xwing_vision_flight.py --bench               # 掛機: 忽略 AGL / 啟動檢查
+  python3 xwing_vision_flight.py --bench               # 掛機
 
-雲台模式鍵: 程式啟動 / SEARCH 送 '1' 追蹤, PRE_DIVE / DIVE 送 '2' 鎖定 −30° (對地).
+雲台模式鍵 (同 xwing_virtual): SEARCH 送 '1' 追蹤, PRE_DIVE / DIVE 送 '2' 鎖定 −30° (對地).
 """
 
 import argparse
@@ -49,7 +49,7 @@ from dive_guidance import MissionStateMachine
 from attitude_bridge import ArduPilotAttitudeBridge, AttitudeBridgeConfig
 from attitude_time_history import AngleHistory
 from virtual_source import VirtualSource, gps_to_ned, extrapolate_impact, miss_distance
-from vision_guidance import VisionTracker, VG_CSV_FIELDS
+from vision_guidance import VisionSource, VG_CSV_FIELDS
 from xwing_uart_vision import VISION_CSV_FIELDS, vision_row, gimbal_state_label
 
 try:
@@ -79,8 +79,6 @@ CSV_FIELDS = [
     # 虛擬目標 (帶路 / 對照)
     'tgt_n', 'tgt_e', 'slant_m', 'ground_m', 'predive_dist_m',
     'virt_bbox_u', 'virt_bbox_v', 'virt_detected',
-    # 全視覺: 狀態機
-    'vis_locked',
     # PID setpoint + 命令
     'virt_u_sp', 'virt_v_sp', 'pitch_cmd', 'heading_cmd', 'throttle',
     'pid_u_err_deg', 'pid_v_err_deg',
@@ -100,7 +98,7 @@ CSV_FIELDS = [
     'lat', 'lon', 'tgt_lat', 'tgt_lon',
     'abort_reason', 'ctrl_ms',
 ]
-CSV_FIELDS += VG_CSV_FIELDS          # 全視覺: 方位 / 水平距 / 補償像素 / 視覺估計目標位置
+CSV_FIELDS += VG_CSV_FIELDS          # 偵測: 方位 / 水平距 / 畫面位置 / 目標位置估計
 CSV_FIELDS += VISION_CSV_FIELDS      # 對方封包原始值 (與 xwing_virtual 相同)
 
 
@@ -341,7 +339,7 @@ def main():
     ap.add_argument('--tgt-heading', type=float, default=None, metavar='DEG',
                     help='虛擬目標方位 (度), 覆寫 config')
     ap.add_argument('--virtual-control', action='store_true',
-                    help='退回 xwing_virtual 做法: 虛擬目標控制, 視覺只記錄')
+                    help='目標來自虛擬軌跡 (= xwing_virtual), 偵測只記錄')
     ap.add_argument('--bench', action='store_true',
                     help='掛機: 忽略 AGL 進入條件與啟動檢查 (仍需 GUIDED)')
     ap.add_argument('--bench-pitch', type=float, default=None, metavar='DEG',
@@ -349,7 +347,7 @@ def main():
     ap.add_argument('--bench-dive', action='store_true',
                     help='掛機: 跳過 pitch 容差直接交棒 DIVE')
     ap.add_argument('--ground-test', action='store_true',
-                    help='地面測試: SEARCH 保持機頭 (鎖定前不朝虛擬目標轉)')
+                    help='地面測試: SEARCH 保持機頭不朝目標')
     ap.add_argument('--case', type=str, default=None,
                     help='自訂 case 標籤加進檔名')
     ap.add_argument('--no-vision', action='store_true',
@@ -364,7 +362,7 @@ def main():
     fx, fy, cx, cy = cfg.virtual_intrinsics()
     use_vision = not args.virtual_control
     if use_vision and args.no_vision:
-        print("[FATAL] 全視覺一定要開雲台 UART; 沒接雲台請加 --virtual-control")
+        print("[FATAL] 目標來自偵測就一定要開雲台 UART; 沒接雲台請加 --virtual-control")
         sys.exit(1)
 
     moving = cfg.MOVING_TARGET if args.moving is None else args.moving
@@ -393,21 +391,21 @@ def main():
         predive_dist = cfg.PREDIVE_DIST_M
     else:
         predive_dist = cfg.STATIC_PREDIVE_DIST_M
-    print(f"[xwing] 控制: {'★ 全視覺' if use_vision else '虛擬目標 (視覺只記錄)'}")
+    print(f"[xwing] 目標來源: {'★ 目標偵測' if use_vision else '虛擬軌跡 (偵測只記錄)'}")
     print(f"[xwing] 巡航 {cfg.CRUISE_AGL_M:.0f} m / {cfg.V_CRUISE_MPS:.0f} m/s, "
           f"俯衝 {cfg.DIVE_ANGLE_DEG:.0f}° → {cfg.PULLOUT_AGL_M:.0f} m 拉平, "
           f"速度上限 {cfg.PULLOUT_VMAX_MPS:.0f} m/s")
-    print(f"[xwing] 推頭門檻: {'視覺' if use_vision else '虛擬目標'}水平距 ≤ "
+    print(f"[xwing] 推頭門檻: 到目標水平距 ≤ "
           f"{predive_dist:.0f} m")
 
     rospy.init_node('xwing_vision_flight', anonymous=True)
     io = MavrosIO()
 
-    gcfg = build_gcfg(cfg, moving, predive_dist, vision=use_vision,
+    gcfg = build_gcfg(cfg, moving, predive_dist,
                       bench=args.bench, bench_pitch=args.bench_pitch,
                       bench_dive=args.bench_dive, ground_test=args.ground_test)
     sm = MissionStateMachine(gcfg, verbose=True)
-    tracker = VisionTracker(cfg, control_camera(cfg, gcfg))
+    vsrc = VisionSource(cfg, control_camera(cfg, gcfg))
 
     bcfg = apply_bridge_cfg(AttitudeBridgeConfig(), cfg)
     bridge = ArduPilotAttitudeBridge(dive_angle_deg=cfg.DIVE_ANGLE_DEG, cfg=bcfg)
@@ -430,7 +428,7 @@ def main():
                   f"模式鍵 {'ON' if gimbal_cmd else 'OFF'}")
         except ImportError as e:
             if use_vision:
-                print(f"[FATAL] 雲台視覺 UART 無法啟用: {e} — 全視覺不能飛 "
+                print(f"[FATAL] 雲台視覺 UART 無法啟用: {e} — 沒有目標來源 "
                       f"(pip3 install pyserial, 或加 --virtual-control)")
                 sys.exit(1)
             print(f"[xwing] ★ 雲台視覺 UART 無法啟用: {e} — 繼續飛 (虛擬目標控制)")
@@ -486,7 +484,7 @@ def main():
             except (OSError, ValueError):
                 pass
 
-    event(f"xwing_vision: 控制={'全視覺' if use_vision else '虛擬目標'} "
+    event(f"xwing_vision: 目標來源={'目標偵測' if use_vision else '虛擬軌跡'} "
           f"巡航 {cfg.CRUISE_AGL_M:.0f}m/{cfg.V_CRUISE_MPS:.0f}m/s "
           f"俯衝 {cfg.DIVE_ANGLE_DEG:.0f}° 拉平 {cfg.PULLOUT_AGL_M:.0f}m "
           f"Vmax {cfg.PULLOUT_VMAX_MPS:.0f}m/s 推頭 {predive_dist:.0f}m")
@@ -495,12 +493,9 @@ def main():
           f"{'移動' if moving else '靜止'} 起點 {start_gps} 方位 {heading:.1f}° "
           f"速度 {speed} m/s")
     if use_vision:
-        event(f"全視覺: 鎖定 = 最近 {cfg.VISION_ACQUIRE_WINDOW} 筆有 {cfg.VISION_ACQUIRE_HITS} 筆, SEARCH 逾時 "
-              f"{cfg.VISION_SEARCH_TIMEOUT_S:.0f}s, 跟丟 SEARCH/PRE_DIVE/DIVE "
-              f"{cfg.VISION_LOST_SEARCH_S:.1f}/{cfg.VISION_LOST_PREDIVE_S:.1f}/"
-              f"{cfg.VISION_LOST_DIVE_S:.1f}s, 推頭偏機頭 ≤ "
-              f"{cfg.VISION_PREDIVE_MAX_OFF_DEG:.0f}°; 雲台偏差 pitch "
-              f"{cfg.GIMBAL_PITCH_OFFSET_DEG:+.1f}° yaw {cfg.GIMBAL_YAW_OFFSET_DEG:+.1f}°")
+        event(f"目標偵測: 封包 {cfg.VISION_PKT_MAX_AGE_S:.1f}s 沒更新 = 看不到; "
+              f"雲台偏差 pitch {cfg.GIMBAL_PITCH_OFFSET_DEG:+.1f}° "
+              f"yaw {cfg.GIMBAL_YAW_OFFSET_DEG:+.1f}°")
     event(f"雲台視覺 UART: "
           + (f"{vision.port} @ {vision.baud}; 模式鍵 "
              f"{'ON ' + str(cfg.GIMBAL_MODE_KEYS) if gimbal_cmd else 'OFF'}"
@@ -536,7 +531,6 @@ def main():
     guided_off_t = None
     run_idx = 0
     mode_prev = sm.mode
-    locked_prev = False
     last_print = 0.0
     err_count = 0
     vis_last_rid = None
@@ -551,10 +545,7 @@ def main():
     arm_min_dist = predive_dist + cfg.ARM_MIN_MARGIN_M
 
     def arm_check(s):
-        """撥 GUIDED 時能不能開始任務. None = 可以; 否則 = 拒絕原因.
-        空中 (AGL ≥ ARM_GROUND_AGL_M): 同 xwing_virtual (高度、離起點距離、起點在機頭前方),
-        全視覺再加: 雲台資料鏈正常 (VISION_STALE_S 內有有效封包).
-        地面 / 掛機不檢查."""
+        """撥 GUIDED 時能不能開始任務 (= xwing_virtual). None = 可以; 否則 = 拒絕原因."""
         if args.bench or args.ground_test:
             return None
         agl = s['rel_alt']
@@ -563,15 +554,11 @@ def main():
         if agl is None or agl < cfg.ENTRY_MIN_AGL_M:
             return (f"高度 {agl if agl is not None else float('nan'):.0f} m "
                     f"(< {cfg.ENTRY_MIN_AGL_M:.0f} m), 到不了推頭條件")
-        if use_vision:
-            pkt = vision.latest() if vision is not None else None
-            if pkt is None or time.monotonic() - pkt['rx_mono'] > cfg.VISION_STALE_S:
-                return "雲台資料鏈中斷 (沒有新的封包), 全視覺看不到車"
         an, ae = gps_to_ned(s['lat'], s['lon'], o_lat, o_lon)
         d0 = math.hypot(an, ae)
         if d0 < arm_min_dist:
             return (f"離目標起點只有 {d0:.0f} m (< {arm_min_dist:.0f} m), "
-                    f"來不及找車 / 一撥就會推頭")
+                    f"一撥就會推頭")
         if d0 > cfg.ARM_MAX_DIST_M:
             return (f"離目標起點 {d0:.0f} m (> {cfg.ARM_MAX_DIST_M:.0f} m), "
                     f"不在 WP3 附近 / --start 打錯")
@@ -596,11 +583,10 @@ def main():
         else:
             tn, te, _, _ = virt.target_now(t)
             event(f"種點(靜止): 虛擬目標 NED=({tn:.1f},{te:.1f})")
-        _lv = tracker.last_valid
         if use_vision:
-            event("視覺: " + (f"撥 GUIDED 時已看到車 (最近 {tracker.hits} 筆有效, "
-                              f"水平距 {_lv['ground_m']:.0f} m)" if _lv is not None
-                              else "還沒看到車 — 先朝虛擬目標帶路"))
+            _lv = vsrc.last_valid
+            event("目標偵測: " + (f"撥 GUIDED 時已偵測到目標 (水平距 {_lv['ground_m']:.0f} m)"
+                                  if _lv is not None else "還沒偵測到目標 — 先朝虛擬目標帶路"))
         _cruise_alt = s.get('rel_alt')
         if _cruise_alt is None or _cruise_alt < 5.0:
             _cruise_alt = cfg.CRUISE_AGL_M
@@ -653,13 +639,12 @@ def main():
                         and t - guided_off_t >= cfg.REARM_OFF_S
                         and (sm.mission_armed or sm.mode != sm.SEARCH)):
                     sm = MissionStateMachine(gcfg, verbose=True)
-                    tracker.reset()
+                    vsrc.reset()
                     mode_prev = sm.mode
-                    locked_prev = False
                     scored['done'] = False
                     _miss_warned = False
                     event(f"任務重置 — 下次撥 GUIDED = 第 {run_idx + 1} 趟 "
-                          f"(重新找車; 虛擬帶路目標回到起點)")
+                          f"(重新偵測目標; 虛擬目標回到起點)")
 
                 if flags['arm']:
                     flags['arm'] = False
@@ -695,11 +680,11 @@ def main():
                     't': t,
                 })
 
-                # ── 全視覺: 最新封包 → 方位 / 水平距 / 補償像素 ──
+                # ── 目標偵測: 最新封包 → 與虛擬目標同名的欄位 ──
                 _mono = time.monotonic()
                 _vpkt = vision.latest() if vision is not None else None
-                _vg_inp, _vg_row = tracker.update(_vpkt, _mono, t, io.pose_history,
-                                                  agl, ac_n, ac_e, origin=NED_ORIGIN)
+                _vg_fields, _vg_row = vsrc.get_fields(_vpkt, _mono, io.pose_history,
+                                                      agl, ac_n, ac_e, origin=NED_ORIGIN)
 
                 inp = {
                     't': t, 'guided': s['guided'],
@@ -712,23 +697,20 @@ def main():
                     **vfields,
                 }
                 if use_vision:
-                    inp.update(_vg_inp)
+                    # ★ 目標輸入換成偵測. 從沒偵測到過 → 位置先用虛擬目標帶路,
+                    #   但距離 / 畫面 / 有效旗標一律來自偵測 (看不到 = 不會推頭)
+                    _g = dict(_vg_fields)
+                    if _g['tgt_n'] is None:
+                        _g['tgt_n'], _g['tgt_e'] = vfields['tgt_n'], vfields['tgt_e']
+                    inp.update(_g)
                 out = sm.update(inp)
 
-                if out.get('vis_locked') and not locked_prev:
-                    _lv = tracker.last_valid
-                    event(f"★ 視覺鎖定目標 (第 {run_idx} 趟): 水平距 "
-                          f"{_lv['ground_m']:.0f} m, 方位 {_lv['bearing_deg']:.1f}° "
-                          f"(偏機頭 {_lv['bearing_off_deg']:+.1f}°), 虛擬目標水平距 "
-                          f"{vfields['ground_m']:.0f} m")
-                locked_prev = bool(out.get('vis_locked'))
-
                 if out['mode'] != mode_prev:
-                    _vd = _vg_inp.get('vis_ground_med_m')
+                    _vd = _vg_fields.get('ground_m')
                     banner = (f"★★ MODE: {mode_prev} → {out['mode']} "
                               f"(t={t:.1f}s AGL="
                               f"{f'{agl:.1f}' if agl is not None else '?'} "
-                              f"V={V:.1f} 視覺水平距="
+                              f"V={V:.1f} 偵測水平距="
                               f"{f'{_vd:.0f}m' if _vd is not None else '—'} "
                               f"虛擬水平距={vfields['ground_m']:.0f}m "
                               f"pitch_cmd={out['pitch_cmd_deg']:+.1f} "
@@ -797,7 +779,7 @@ def main():
                                  f" 有沒有插 / 串口名稱")
                               + f", CRC 錯 {vision.stats['crc']}, 串口錯 "
                               f"{vision.stats['serial_err']})"
-                              + (" ← 全視覺: 看不到車, 跟丟計時開始" if use_vision
+                              + (" ← 目標偵測中斷 = 看不到目標" if use_vision
                                  else " ← 控制不受影響"))
                     elif not _down and vis_down:
                         event("雲台視覺資料鏈恢復")
@@ -812,16 +794,14 @@ def main():
                 vv = vfields['bbox_v']
                 _brg = bridge.get_debug()
 
-                # 逐拍外插 miss: 全視覺對「視覺估計的目標位置」(靜止假設), 否則對虛擬目標
+                # 逐拍外插 miss: 對狀態機用的目標 (偵測 = 目標位置估計, 靜止假設)
                 _mp = _mlon = _mlat = _tf = ''
-                _lv = tracker.last_valid
-                _ref = ((_lv['tgt_n'], _lv['tgt_e'], 0.0, 0.0)
-                        if (use_vision and _lv is not None) else
-                        (vfields['tgt_n'], vfields['tgt_e'],
-                         vfields.get('tgt_vn') or 0.0, vfields.get('tgt_ve') or 0.0))
+                _ref = (inp['tgt_n'], inp['tgt_e'],
+                        inp.get('tgt_vn') or 0.0, inp.get('tgt_ve') or 0.0)
                 try:
                     if (agl is not None and agl > 0.5
-                            and (s['vd'] or 0.0) > 0.1):
+                            and (s['vd'] or 0.0) > 0.1
+                            and inp['tgt_n'] is not None):
                         _in, _ie, _tfall = extrapolate_impact(
                             ac_n, ac_e, agl,
                             s['vn'] or 0.0, s['ve'] or 0.0, s['vd'] or 0.0)
@@ -864,7 +844,6 @@ def main():
                     'predive_dist_m': round(vfields['predive_dist_m'], 1),
                     'virt_bbox_u': _r(vu, 1), 'virt_bbox_v': _r(vv, 1),
                     'virt_detected': int(vfields['bbox_detected']),
-                    'vis_locked': out.get('vis_locked', ''),
                     'virt_u_sp': out.get('pid_u_sp', ''),
                     'virt_v_sp': out.get('pid_v_sp', ''),
                     'pitch_cmd': out['pitch_cmd_deg'],
@@ -916,12 +895,9 @@ def main():
                            if _np is not None else " | FC nav_* 無資料")
                     _vs = ''
                     if vision is not None:
-                        _vd = _vg_inp.get('vis_ground_med_m')
-                        _va = _vg_inp.get('vis_age_s')
+                        _vd = _vg_fields.get('ground_m')
                         _vs = (f" | VIS link={_vrow['vis_link']} "
-                               f"lock={out.get('vis_locked', 0)} "
-                               f"hits={_vg_inp['vis_hits']} "
-                               f"age={f'{_va:.1f}s' if _va is not None else '-'} "
+                               f"det={int(_vg_fields['tgt_valid'])} "
                                f"dist={f'{_vd:.0f}m' if _vd is not None else '-'} "
                                f"gmode={_vrow['vis_gimbal_mode'] if _vrow['vis_gimbal_mode'] != '' else '-'}"
                                f"(req {_vrow['gimbal_mode_req'] or '-'}) "
@@ -942,17 +918,10 @@ def main():
                         md = miss_distance(i_n, i_e, t_f, sp['tgt_n'], sp['tgt_e'],
                                            sp['tgt_vn'], sp['tgt_ve'],
                                            sp['vn'] or 0, sp['ve'] or 0)
-                        event(f"成績 (對虛擬目標, 只供對照): miss = "
-                              f"{md['miss_total']:.2f} m")
-                        _lv = tracker.last_valid
-                        if _lv is not None:
-                            mv = miss_distance(i_n, i_e, t_f,
-                                               _lv['tgt_n'], _lv['tgt_e'], 0.0, 0.0,
-                                               sp['vn'] or 0, sp['ve'] or 0)
-                            event(f"★★★ 成績 (對視覺估計的目標位置, 靜止假設): "
-                                  f"miss = {mv['miss_total']:.2f} m "
-                                  f"(lon {mv['miss_lon']:+.2f}, lat {mv['miss_lat']:+.2f}); "
-                                  f"對真車請用車子 GPS 事後算")
+                        event(f"★★★ 成績: miss = {md['miss_total']:.2f} m "
+                              f"(lon {md['miss_lon']:+.2f}, lat {md['miss_lat']:+.2f}) — 對"
+                              + ("偵測到的目標位置 (靜止假設); 對真車請用車子 GPS 事後算"
+                                 if use_vision else "虛擬目標"))
 
             except Exception as e:
                 err_count += 1

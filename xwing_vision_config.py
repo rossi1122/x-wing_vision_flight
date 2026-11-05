@@ -5,12 +5,12 @@ xwing_vision_config.py — X-wing 全視覺版全部參數
 任務 (與 hsu_realflight_true 的 xwing_virtual 相同場景):
       AUTO 240 m / 30 m/s → WP3 撥 GUIDED → SEARCH → PRE_DIVE(推頭到 -30°)
       → 30° DIVE → PULLOUT(140 m 拉平) → TECS 140 m 平飛
-差別: ★ 目標位置全部來自對方雲台相機 (UART), 不再用虛擬軌跡控制.
-      · SEARCH 鎖定前: 朝虛擬目標 (WP4 起點) 飛, 只當「帶路」讓相機看到車
-      · 鎖定後:        航向 = 視覺算出的車的方位
-      · 推頭:          視覺水平距 ≤ 415.69 m (= 240 / tan30°) 且車在機頭前方
-      · DIVE:          補償後的真實像素進 PID (同原專案 DIVE_USE_REAL_CAMERA)
-      · 跟丟:          SEARCH 平飛交還 / PRE_DIVE、DIVE 拉起中止
+差別: ★ 只換「目標輸入的來源」: 虛擬軌跡 → 對方雲台的目標偵測 (UART).
+      狀態機與判斷邏輯 (dive_guidance) 完全沿用原專案, 沒有新增條件:
+      · SEARCH:   航向 = 飛機指向目標位置 (偵測算出; 還沒看到車前用虛擬目標帶路)
+      · 推頭:     到目標水平距 ≤ 415.69 m (= 240 / tan30°)
+      · PRE_DIVE: 目標遺失 > 1.5 s → ABORT (原 ABORT_TARGET_LOST_S)
+      · DIVE:     目標在畫面的位置進 PID; 目標遺失 > 1.5 s → ABORT
 
 任務幾何、PID、方向舵、安全參數全部沿用 xwing_virtual_config.py
 (hsu_realflight_true, 2026/11/04 實飛版), 數值與註解保持一致.
@@ -54,7 +54,7 @@ class XwingVisionConfig:
     #  安全
     # ════════════════════════════════════════════════════════════
     ABORT_MIN_AGL_M = 100.0     # 低於此高度 ABORT 拉起 (PULLOUT 140 m 先觸發; 這是最後一道)
-    ABORT_TARGET_LOST_S = 1.5   # 虛擬目標用 (全視覺不用, 改看下面 VISION_LOST_*)
+    ABORT_TARGET_LOST_S = 1.5   # PRE_DIVE / DIVE 看不到目標超過此秒數 → ABORT (原邏輯)
 
     # ════════════════════════════════════════════════════════════
     #  控制座標系 (虛擬相機) — DIVE PID 的像素 / 角度換算用
@@ -98,10 +98,10 @@ class XwingVisionConfig:
     ROLL_PROT_ZERO_DEG = 35.0
 
     # ════════════════════════════════════════════════════════════
-    #  虛擬目標 — ★ 全視覺版只拿來「帶路」和「對照」, 不決定推頭 / 瞄準
-    #  · SEARCH 鎖定前: 朝它飛, 讓機頭對著馬路, 相機才看得到車
-    #  · 撥 GUIDED 啟動檢查: 用起點判斷飛機位置 / 方向合不合理
-    #  · log: tgt_* 欄位照記, 可跟視覺估計的目標位置 (vg_tgt_*) 比
+    #  虛擬目標 (= xwing_virtual_config) — ★ 只用來「帶路」與「對照」:
+    #  · 還沒偵測到車之前, SEARCH 朝它飛 (讓機頭對著馬路, 相機才看得到車)
+    #  · 撥 GUIDED 啟動檢查用起點判斷位置 / 方向 (原邏輯)
+    #  · log 的 tgt_* 欄位照記, 可跟偵測到的目標位置 (vg_tgt_*) 比
     # ════════════════════════════════════════════════════════════
     MOVING_TARGET = True
     MOVING_START_GPS = (23.7222419, 120.3798848)   # 2026/11/01 = 任務 WP4
@@ -113,27 +113,15 @@ class XwingVisionConfig:
     TARGET_GPS = MOVING_START_GPS
 
     # 推頭距離 = 巡航高度 / tan(俯衝角) = 240 / tan30° = 415.69 m
-    #   全視覺: 跟「視覺算出的水平距」比. 追蹤模式下車在畫面上下置中,
-    #   這時雲台 pitch ≈ −30° 就是到了推頭點.
+    #   (同原專案; 距離改由目標偵測算出)
     PREDIVE_DIST_M = CRUISE_AGL_M / math.tan(math.radians(DIVE_ANGLE_DEG))
     STATIC_PREDIVE_DIST_M = PREDIVE_DIST_M
 
     # ════════════════════════════════════════════════════════════
-    #  ★ 全視覺導引 (dive_guidance VISION_GUIDANCE)
+    #  ★ 目標偵測 → 目標輸入 (vision_guidance.VisionSource)
     # ════════════════════════════════════════════════════════════
-    VISION_ACQUIRE_HITS = 10          # 最近 15 筆新的辨識結果裡有 10 筆看到車 → 鎖定
-    VISION_ACQUIRE_WINDOW = 15        #   (30 Hz 約 0.5 s; 漏一兩筆不用從頭數)
-    VISION_MEAS_MAX_AGE_S = 0.5       # 最後一筆有效偵測在 0.5 s 內 = 「現在看得到」
-    VISION_GROUND_MEDIAN_N = 5        # 推頭用的水平距 = 最近 5 筆有效值的中位數 (擋單筆跳動)
-    VISION_SEARCH_TIMEOUT_S = 25.0    # 撥 GUIDED 後 25 s 還沒鎖定 → 這趟結束 (平飛交還)
-                                      #   (WP3 撥 GUIDED 離起點 ~600 m, 追擊接近率 ~20 m/s,
-                                      #    正常 10 s 內就會到推頭距離)
-    VISION_LOST_SEARCH_S = 5.0        # SEARCH 鎖定後跟丟 5 s → 這趟結束 (期間保持最後方位)
-    VISION_LOST_PREDIVE_S = 1.5       # PRE_DIVE 跟丟 1.5 s → ABORT 拉起
-    VISION_LOST_DIVE_S = 1.0          # DIVE 跟丟 1.0 s → ABORT 拉起
-    VISION_PREDIVE_MAX_OFF_DEG = 10.0 # 車偏離機頭 > 10° 先不推頭 (SEARCH 會先轉正)
-    VISION_PREDIVE_MIN_DIST_M = 300.0 # 還沒推頭就已經 < 300 m (太晚鎖定) → 這趟結束,
-                                      #   避免俯衝比 −38° 還陡 (atan(240/300))
+    VISION_PKT_MAX_AGE_S = 0.3        # 最新封包超過這麼久沒更新 → 這拍算「看不到目標」
+                                      #   (對方約 30 Hz, 0.3 s ≈ 連續 9 筆沒收到)
 
     # ── 相機幾何 (對方雲台, 2026/11 確認) ──
     #   pitch: 對地角, 往下為負, 拍照那一刻的值 → 符號 +1
@@ -152,14 +140,12 @@ class XwingVisionConfig:
     VISION_UART_ENABLED = True
     VISION_UART_PORT = '/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0'
     VISION_UART_BAUD = 115200
-    VISION_STALE_S = 2.0              # 這麼久沒收到有效封包 → 資料鏈中斷 (不准撥 GUIDED)
+    VISION_STALE_S = 2.0              # 這麼久沒收到有效封包 → events 記「資料鏈中斷」
 
-    # ── 依任務狀態送模式鍵 ('0' 手動 / '1' 追蹤 / '2' 鎖定 −30° 對地) ──
-    #   ★ 與 xwing_virtual 不同: STANDBY 也送 '1' → 程式一開、AUTO 進場時雲台就在找車,
-    #     每趟結束 (切出 GUIDED) 後也會自動回到追蹤, 下一圈不用人工切.
+    # ── 依任務狀態送模式鍵 ('0' 手動 / '1' 追蹤 / '2' 鎖定 −30° 對地) — 同 xwing_virtual ──
     GIMBAL_MODE_CMD_ENABLED = True
     GIMBAL_MODE_KEYS = {
-        'STANDBY':  '1',
+        'STANDBY':  None,
         'SEARCH':   '1',
         'PRE_DIVE': '2',
         'DIVE':     '2',

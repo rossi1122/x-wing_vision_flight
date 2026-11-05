@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-test_vision_guidance.py — 全視覺版測試 (不需要 ROS / 飛控 / 雲台)
+test_vision_guidance.py — 目標偵測版測試 (不需要 ROS / 飛控 / 雲台)
 ═══════════════════════════════════════════════════════════════════
-1. 幾何: 方位、水平距、DIVE 補償的正負號 (手算期望值, 不靠模擬器)
-2. 狀態機: 鎖定、推頭條件、跟丟逾時、DIVE 交棒要看得到車;
-           VISION_GUIDANCE=False 時行為與原本相同
+1. 幾何: 方位、水平距、DIVE 畫面位置的正負號 (手算期望值, 不靠模擬器)
+2. VisionSource: 偵測結果 → 與虛擬目標同名的欄位 (看得到 / 看不到 / 資料過期)
 3. 閉迴路模擬 (xwing_vision_sim): 各種車子情境的結果合理
 4. 實飛主程式 xwing_vision_flight.main(): 假 rospy + 假時鐘 + 模擬雲台,
-   走完「撥 GUIDED → 鎖定 → PRE_DIVE → DIVE → PULLOUT → DONE」,
-   以及資料鏈中斷時拒絕啟動、沒有車時逾時結束
+   走完「撥 GUIDED → PRE_DIVE → DIVE → PULLOUT → DONE」, 以及沒有車時不推頭
 
 用法: python3 test_vision_guidance.py      (最後印 PASS / FAIL)
 """
@@ -82,95 +80,55 @@ def test_geometry():
 
 
 # ══════════════════════════════════════════════════════════════════
-# 2. 狀態機
+# 2. VisionSource (目標輸入來源)
 # ══════════════════════════════════════════════════════════════════
-def _sm(vision=True, **ov):
+def test_source():
+    print("[2] VisionSource")
     from xwing_vision_config import XwingVisionConfig
-    from xwing_vision_common import build_gcfg
-    from dive_guidance import MissionStateMachine
-    cfg = XwingVisionConfig(**ov)
-    sm = MissionStateMachine(build_gcfg(cfg, True, cfg.PREDIVE_DIST_M, vision=vision),
-                             verbose=False)
-    sm.arm()
-    return sm
+    from xwing_vision_common import build_gcfg, control_camera
+    from vision_guidance import VisionSource
+    from attitude_time_history import AngleHistory
+    import dive_guidance
+    cfg = XwingVisionConfig()
+    gcfg = build_gcfg(cfg, True, cfg.PREDIVE_DIST_M)
+    check(not hasattr(gcfg, 'VISION_GUIDANCE') and not gcfg.DIVE_USE_REAL_CAMERA,
+          "狀態機參數 = 原專案 (沒有新增的視覺開關)")
+    check(not hasattr(dive_guidance.GuidanceConfig, 'VISION_GUIDANCE'),
+          "dive_guidance.py 是原版 (沒有新增條件)")
+    src = VisionSource(cfg, control_camera(cfg, gcfg))
+    poses = AngleHistory()
+    for k in range(20):
+        poses.append(10.0 + 0.02 * k, (0.0, 0.0, 180.0, 180.0))
 
-
-def _inp(t, **kw):
-    d = {'t': t, 'guided': True, 'agl_m': 240.0, 'airspeed_mps': 30.0,
-         'gs_mps': 30.0, 'vn': -30.0, 've': 0.0, 'vd': 0.0,
-         'yaw_true_deg': 180.0, 'pitch_deg': 0.0, 'roll_deg': 0.0,
-         'ac_n': 600.0, 'ac_e': 0.0, 'tgt_n': 0.0, 'tgt_e': 0.0, 'tgt_valid': True,
-         'ground_m': 600.0, 'predive_dist_m': 600.0, 'bbox_detected': True,
-         'vis_age_s': None, 'vis_hits': 0, 'vis_bearing_deg': None,
-         'vis_bearing_off_deg': None, 'vis_ground_med_m': None,
-         'real_control_detected': False}
-    d.update(kw)
-    return d
-
-
-def test_state_machine():
-    print("[2] 狀態機")
-    see = dict(vis_age_s=0.05, vis_bearing_deg=185.0, vis_bearing_off_deg=5.0)
-    # 鎖定要視窗內 10 筆
-    sm = _sm()
-    sm.update(_inp(0.0, vis_hits=9, vis_ground_med_m=500.0, **see))
-    check(not sm._vis_locked, "視窗內 9 筆還不鎖定")
-    out = sm.update(_inp(0.02, vis_hits=10, vis_ground_med_m=500.0, **see))
-    check(sm._vis_locked and out['vis_locked'] == 1, "視窗內 10 筆 → 鎖定")
-    check(abs(out['heading_cmd_deg'] - 185.0) < 1e-6, "鎖定後航向 = 視覺方位")
-    # 距離 ≤ 415.69 但偏機頭 > 10° → 不推頭
-    out = sm.update(_inp(0.04, vis_hits=11, vis_ground_med_m=410.0,
-                         vis_age_s=0.05, vis_bearing_deg=200.0, vis_bearing_off_deg=20.0))
-    check(out['mode'] == 'SEARCH', "偏機頭 20° → 先不推頭")
-    out = sm.update(_inp(0.06, vis_hits=12, vis_ground_med_m=410.0, **see))
-    check(out['mode'] == 'PRE_DIVE' and out['pitch_cmd_deg'] == -30.0,
-          "距離 410 m、偏 5° → PRE_DIVE, pitch −30°")
-    # 虛擬目標距離不影響 (虛擬 600 m 還沒到也推頭了) — 上面已驗
-    # PRE_DIVE: pitch 到位但看不到車 → 不交棒
-    out = sm.update(_inp(1.0, pitch_deg=-29.0, vis_hits=13, vis_ground_med_m=380.0,
-                         real_control_detected=False, **see))
-    check(out['mode'] == 'PRE_DIVE', "pitch 到位但補償像素無效 → 不進 DIVE")
-    out = sm.update(_inp(1.02, pitch_deg=-29.0, vis_hits=14, vis_ground_med_m=380.0,
-                         real_control_detected=True, real_control_u=960.0,
-                         real_control_v=545.0, real_control_cap_t=1.0, **see))
-    check(out['mode'] == 'DIVE', "pitch 到位且看得到車 → DIVE")
-    # DIVE 跟丟 1 s → ABORT
-    out = sm.update(_inp(1.5, pitch_deg=-30.0, agl_m=220.0, vis_age_s=0.6))
-    check(out['mode'] == 'DIVE', "DIVE 跟丟 0.6 s → 還在 DIVE (保持命令)")
-    out = sm.update(_inp(2.0, pitch_deg=-30.0, agl_m=215.0, vis_age_s=1.1))
-    check(out['mode'] == 'ABORT' and out['abort_reason'] == 'VISION_LOST_DIVE',
-          "DIVE 跟丟 1.1 s → ABORT")
-
-    # 沒鎖定逾時 → DONE (不拉起)
-    sm = _sm()
-    sm.update(_inp(0.0))
-    out = sm.update(_inp(25.1))
-    check(out['mode'] == 'DONE' and out['abort_reason'] == 'VISION_NOT_FOUND',
-          "25 s 沒看到車 → DONE (VISION_NOT_FOUND)")
-    # 鎖定後跟丟 5 s → DONE
-    sm = _sm()
-    sm.update(_inp(0.0, vis_hits=10, vis_ground_med_m=550.0, **see))
-    out = sm.update(_inp(3.0, vis_hits=0, vis_age_s=3.0, vis_bearing_deg=185.0))
-    check(out['mode'] == 'SEARCH' and abs(out['heading_cmd_deg'] - 185.0) < 1e-6,
-          "SEARCH 跟丟 3 s → 保持最後方位")
-    out = sm.update(_inp(5.2, vis_hits=0, vis_age_s=5.2, vis_bearing_deg=185.0))
-    check(out['mode'] == 'DONE' and out['abort_reason'] == 'VISION_LOST_SEARCH',
-          "SEARCH 跟丟 5.2 s → DONE")
-    # 太晚鎖定 (< 300 m) → DONE
-    sm = _sm()
-    out = sm.update(_inp(0.0, vis_hits=10, vis_ground_med_m=280.0, **see))
-    check(out['mode'] == 'DONE' and out['abort_reason'].startswith('VISION_TOO_CLOSE'),
-          "鎖定時只剩 280 m → DONE (避免太陡)")
-    # PRE_DIVE 跟丟 1.5 s → ABORT
-    sm = _sm()
-    sm.update(_inp(0.0, vis_hits=10, vis_ground_med_m=400.0, **see))
-    out = sm.update(_inp(1.6, vis_age_s=1.6, vis_bearing_deg=185.0))
-    check(out['mode'] == 'ABORT' and out['abort_reason'] == 'VISION_LOST_PREDIVE',
-          "PRE_DIVE 跟丟 1.6 s → ABORT")
-    # 虛擬模式不受視覺欄位影響 (原行為)
-    sm = _sm(vision=False)
-    out = sm.update(_inp(0.0, ground_m=400.0, predive_dist_m=400.0))
-    check(out['mode'] == 'PRE_DIVE', "VISION_GUIDANCE=False: 照虛擬距離推頭 (原行為)")
+    def pkt(rid, u, v, t, pitch=-30.0):
+        return {'target_cx': u, 'target_cy': v, 'fx': 1000.0, 'fy': 1000.0,
+                'cx': 960.0, 'cy': 540.0, 'pitch': pitch, 'roll': 0.0,
+                'result_id': rid, 'valid': not math.isnan(u),
+                'cap_mono': t - 0.05, 'rx_mono': t}
+    # 飛機在 NED (600, 0), 往南, 車在畫面正中央 → 目標位置 ≈ (600 − 415.7, 0)
+    f, _ = src.get_fields(pkt(1, 960, 540, 10.2), 10.2, poses, 240.0, 600.0, 0.0)
+    check(f['tgt_valid'] and abs(f['predive_dist_m'] - 415.69) < 0.5,
+          f"看得到: tgt_valid=1, predive_dist_m={f['predive_dist_m']:.1f} (= 偵測水平距)")
+    check(abs(f['tgt_n'] - (600 - 415.69)) < 0.5 and abs(f['tgt_e']) < 0.5,
+          f"看得到: 目標位置 ({f['tgt_n']:.1f},{f['tgt_e']:.1f}) → 原邏輯朝它飛")
+    check(f['bbox_detected'] and f['bbox_u'] is not None,
+          "看得到: bbox_detected / bbox_u/v 有值 (DIVE PID 用)")
+    nan = float('nan')
+    f, row = src.get_fields(pkt(2, nan, nan, 10.25), 10.25, poses, 240.0, 590.0, 0.0)
+    check(not f['tgt_valid'] and f['predive_dist_m'] is None and not f['bbox_detected'],
+          "這筆沒目標: tgt_valid=0, 沒有距離 (不會推頭), bbox_detected=0")
+    check(f['tgt_n'] is not None and row['vg_reason'] == 'no_target',
+          "這筆沒目標: 目標位置保持最後一次看到的 (原邏輯繼續朝它飛)")
+    f, _ = src.get_fields(pkt(3, 960, 540, 10.3), 10.3, poses, 240.0, 580.0, 0.0)
+    check(f['tgt_valid'], "又看到 → tgt_valid=1")
+    f, row = src.get_fields(pkt(3, 960, 540, 10.3), 10.3 + cfg.VISION_PKT_MAX_AGE_S + 0.01,
+                            poses, 240.0, 570.0, 0.0)
+    check(not f['tgt_valid'] and row['vg_reason'] == 'stale',
+          "封包不再更新 (資料鏈斷) → 看不到")
+    src.reset()
+    f, _ = src.get_fields(None, 11.0, poses, 240.0, 560.0, 0.0)
+    check(f['tgt_n'] is None and not f['tgt_valid'],
+          "新的一趟: 忘掉上一趟的目標 (主程式改用虛擬目標帶路)")
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -184,33 +142,32 @@ def test_sim():
     rvv = simulate(vision=False, car_case='virtual')
     check(r['miss_car'] is not None
           and abs(r['miss_car']['miss_total'] - rvv['miss_car']['miss_total']) < 10.0,
-          f"車照虛擬目標開: 全視覺 miss {r['miss_car']['miss_total']:.1f} m ≈ "
-          f"虛擬控制 {rvv['miss_car']['miss_total']:.1f} m (同一套追擊幾何)")
+          f"車照虛擬目標開: 偵測 miss {r['miss_car']['miss_total']:.1f} m ≈ "
+          f"虛擬軌跡 {rvv['miss_car']['miss_total']:.1f} m (同一套判斷邏輯)")
     check(r['predive'] and abs(r['predive']['vis'] - r['predive']['true']) < 15.0,
-          "推頭時視覺水平距與真實相差 < 15 m")
-    # 車慢 (11/04): 全視覺在「真實」415 m 推頭; 虛擬控制被假想車騙, 推頭時真車只剩 ~340 m
+          "推頭時偵測水平距與真實相差 < 15 m")
+    # 車慢 (11/04): 偵測在「真實」415 m 推頭; 虛擬軌跡被假想車騙, 推頭時真車只剩 ~340 m
     rv = simulate(vision=True, car_case='slow')
     rb = simulate(vision=False, car_case='slow')
     check(abs(rv['predive']['true'] - 415.7) < 15.0,
-          f"車慢: 全視覺推頭時真實水平距 {rv['predive']['true']:.0f} m ≈ 416")
+          f"車慢: 偵測推頭時真實水平距 {rv['predive']['true']:.0f} m ≈ 416")
     check(abs(rb['predive']['true'] - 415.7) > 50.0,
-          f"車慢: 虛擬控制推頭時真實水平距 {rb['predive']['true']:.0f} m (偏離 > 50 m)")
-    # 車停著沒開: 全視覺打得到, 虛擬控制打在假想車的位置
+          f"車慢: 虛擬軌跡推頭時真實水平距 {rb['predive']['true']:.0f} m (偏離 > 50 m)")
+    # 車停著沒開: 偵測打得到, 虛擬軌跡打在假想車的位置
     rs = simulate(vision=True, car_case='stopped')
     rsb = simulate(vision=False, car_case='stopped')
     check(rs['miss_car']['miss_total'] < 20.0 < rsb['miss_car']['miss_total'],
-          f"車沒開: 全視覺 miss {rs['miss_car']['miss_total']:.1f} m, "
-          f"虛擬控制 {rsb['miss_car']['miss_total']:.1f} m")
+          f"車沒開: 偵測 miss {rs['miss_car']['miss_total']:.1f} m, "
+          f"虛擬軌跡 {rsb['miss_car']['miss_total']:.1f} m")
     rbo = simulate(vision=True, car_case='slow', blackout=(5.5, 7.5))
-    check(rbo['abort'] == 'VISION_LOST_DIVE' and rbo['miss_car'] is None,
-          "DIVE 中資料鏈斷 2 s → VISION_LOST_DIVE 拉起中止")
+    check(rbo['abort'] == 'TARGET_LOST_DIVE' and rbo['miss_car'] is None,
+          "DIVE 中資料鏈斷 2 s → 原邏輯 TARGET_LOST_DIVE 拉起中止")
     rn = simulate(vision=True, car_case='none')
-    check(rn['abort'] == 'VISION_NOT_FOUND' and rn['predive'] is None,
-          "沒有車 → 不俯衝, VISION_NOT_FOUND")
+    check(rn['predive'] is None and rn['miss_car'] is None,
+          "沒有車 → 沒有距離, 不推頭 (原邏輯 SEARCH 沒有逾時)")
     rd = simulate(vision=True, car_case='slow', dropout=0.3)
-    check(rd['miss_car'] is not None and rd['lock']['t'] < 1.0
-          and abs(rd['predive']['true'] - 415.7) < 20.0,
-          "30% 漏偵測: 1 s 內鎖定, 仍在 ~416 m 推頭並完成俯衝")
+    check(rd['miss_car'] is not None and abs(rd['predive']['true'] - 415.7) < 20.0,
+          "30% 漏偵測: 仍在 ~416 m 推頭並完成俯衝")
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -417,29 +374,26 @@ def run_flight(script, car_present=True, link_ok_from=0.0, case='vtest', stop_at
 def test_flight():
     print("[4] 實飛主程式 (假 ROS + 模擬雲台)")
     text, rows = run_flight([(2.0, True)], case='vtest_full')
-    for key in ('第 1 趟任務開始', '視覺鎖定目標', 'MODE: SEARCH → PRE_DIVE',
+    for key in ('第 1 趟任務開始', '撥 GUIDED 時已偵測到目標', 'MODE: SEARCH → PRE_DIVE',
                 'MODE: PRE_DIVE → DIVE', 'MODE: DIVE → PULLOUT', 'MODE: PULLOUT → DONE',
-                '對視覺估計的目標位置', "雲台狀態 → PRE_DIVE: 模式鍵 '2'"):
+                '偵測到的目標位置', "雲台狀態 → PRE_DIVE: 模式鍵 '2'"):
         check(key in text, f"完整一趟: events 有「{key}」")
     pre = next((r for r in rows if r['mode'] == 'PRE_DIVE'), None)
-    check(pre is not None and pre['vg_ground_med_m'] != ''
-          and float(pre['vg_ground_med_m']) <= 416.0,
-          "CSV: 推頭那拍的視覺水平距 ≤ 415.69 m")
+    check(pre is not None and pre['vg_ground_m'] != ''
+          and float(pre['vg_ground_m']) <= 416.0,
+          "CSV: 推頭那拍的偵測水平距 ≤ 415.69 m")
     check(all(r['control'] == 'vision' for r in rows), "CSV: control = vision")
 
     text, rows = run_flight([(2.0, True)], car_present=False, case='vtest_nocar',
-                            stop_at=40.0)
-    check('VISION_NOT_FOUND' in text and 'PRE_DIVE' not in text.split('第 1 趟任務開始')[1],
-          "沒有車: 25 s 後 VISION_NOT_FOUND, 不推頭")
-
-    text, rows = run_flight([(2.0, True)], link_ok_from=999.0, case='vtest_nolink',
-                            stop_at=6.0)
-    check('不啟動任務: 雲台資料鏈中斷' in text, "資料鏈沒資料: 撥 GUIDED 拒絕啟動")
+                            stop_at=30.0)
+    after = text.split('第 1 趟任務開始')[1]
+    check('MODE: SEARCH → PRE_DIVE' not in after and rows[-1]['mode'] == 'SEARCH',
+          "沒有車: 一直沒有距離 → 不推頭, 停在 SEARCH (原邏輯)")
 
 
 def main():
     test_geometry()
-    test_state_machine()
+    test_source()
     test_sim()
     test_flight()
     print()
