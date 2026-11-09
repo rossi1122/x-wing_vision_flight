@@ -3,7 +3,8 @@
 """
 test_vision_guidance.py — 目標偵測版測試 (不需要 ROS / 飛控 / 雲台)
 ═══════════════════════════════════════════════════════════════════
-1. 幾何: 方位、水平距、DIVE 畫面位置的正負號 (手算期望值, 不靠模擬器)
+1. 幾何: 方位、水平距、DIVE 畫面位置的正負號 (手算期望值, 不靠模擬器), 雲台 yaw 用法
+1b. UART 協定: 共用接收端 V6 新格式 (0~5 / 10, 含 yaw) 與舊 v6 / v7 / v8 都解得出來
 2. VisionSource: 偵測結果 → 與虛擬目標同名的欄位 (看得到 / 看不到 / 資料過期)
 3. 閉迴路模擬 (xwing_vision_sim): 各種車子情境的結果合理
 4. 實飛主程式 xwing_vision_flight.main(): 假 rospy + 假時鐘 + 模擬雲台,
@@ -77,6 +78,74 @@ def test_geometry():
     # 射線朝上 → 無效
     check(measure(pkt(960, 0, 20.0), (0.0, 0.0, 180.0, 180.0), 240.0, cfg, ctrl) is None,
           "射線朝上 → 無效")
+    # 共用接收端 V6 的雲台 yaw (GIMBAL_YAW_MODE)
+    py = dict(pkt(960, 540, -30.0), yaw=20.0)
+    m_n = measure(py, (0.0, 0.0, 180.0, 180.0), 240.0, cfg, ctrl)
+    check(abs(m_n['bearing_deg'] - 180.0) < 0.01, "yaw 'none' (預設): 不用 yaw, 方位 = 機頭 180")
+    m_b = measure(py, (0.0, 0.0, 180.0, 180.0), 240.0,
+                  XwingVisionConfig(GIMBAL_YAW_MODE='body'), ctrl)
+    check(abs(m_b['bearing_deg'] - 200.0) < 0.01, "yaw 'body': 機頭 180 + 雲台 20 = 200")
+    m_e = measure(py, (0.0, 0.0, 180.0, 180.0), 240.0,
+                  XwingVisionConfig(GIMBAL_YAW_MODE='earth'), ctrl)
+    check(abs(m_e['bearing_deg'] - 20.0) < 0.01, "yaw 'earth': 方位 = 雲台 yaw 20")
+    m_nan = measure(dict(py, yaw=float('nan')), (0.0, 0.0, 180.0, 180.0), 240.0,
+                    XwingVisionConfig(GIMBAL_YAW_MODE='body'), ctrl)
+    check(abs(m_nan['bearing_deg'] - 180.0) < 0.01, "yaw = NaN → 退回 'none'")
+
+
+# ══════════════════════════════════════════════════════════════════
+# 1b. UART 協定 (共用接收端 V6: 新格式 0~5 / 10, 舊 v6 / v7 / v8)
+# ══════════════════════════════════════════════════════════════════
+def test_uart_protocol():
+    print("[1b] UART 協定 (共用接收端 V6)")
+    import struct
+    import xwing_uart_vision as X
+    from uart_mipi_receiver import BASE_FMT, decode_frame
+    from xwing_uart_sender_sim import _frame
+    if not X.UART_OK:
+        check(False, f"缺 pyserial / uart_mipi_receiver: {X.UART_IMPORT_ERROR}")
+        return
+    base = struct.pack(BASE_FMT, 1000.0, 600.0, 40.5, 55.0, 1066.7, 1066.7, 959.5, 545.0,
+                       1920.0, 1080.0, -25.0, 0.0, 1, 7, 30.0, 5.0)
+    ts = struct.pack('>QI', 123456789, 0x5A17)
+    frames = {
+        6: _frame(6, 0, base),
+        7: _frame(7, 0, base + ts),
+        8: _frame(8, 0, base + ts + struct.pack('>f', 300.0)),
+        10: _frame(10, 0, base + ts + struct.pack('>ff', 300.0, 12.5)),
+        0: _frame(0, 0, base + ts + struct.pack('>ff', 280.0, -3.0)),
+    }
+    check(len(frames[10]) == 91, f"新格式封包 {len(frames[10])} B = 91 B")
+    link = X.UartVisionLink('/dev/null', log=lambda *a: None)
+    for ver, fr in frames.items():
+        # 夾雜雜訊 byte, 驗證重新同步
+        link._buf.extend(b'\x00\xA5' + fr)
+        got = link._extract()
+        ok = got is not None and got[0] == fr
+        if ok:
+            link._handle(got[0], got[1], 1_000_000_000)
+            d = link.latest()
+            ok = d['ver'] == ver and d['target_cx'] == 1000.0 and d['pitch'] == -25.0
+        check(ok, f"v{ver}: 解得出來 (ver / 目標 / pitch 正確)")
+    d = link.latest()        # 最後一筆是 v0
+    check(d['yaw'] == -3.0 and abs(d['laser_distance_m'] - 280.0) < 1e-3,
+          f"新格式: yaw {d['yaw']} / 雷射 {d['laser_distance_m']:.0f} m 讀到正確位置")
+    check(link.clock.protocol_version == 0, "新格式: 校時請求用對方的版本號")
+    link._buf.extend(frames[8])
+    link._handle(*link._extract(), 1_000_000_000)
+    check(math.isnan(link.latest()['yaw']) and link.clock.protocol_version == 7,
+          "舊 v8: yaw = NaN, 校時請求版本 7 (同原本)")
+    # 校時回覆 (flags=2) 新版本號也收得到
+    reply = _frame(10, 2, struct.pack('>QQQI', 1, 2, 3, 0x5A17))
+    link._buf.extend(reply)
+    got = link._extract()
+    check(got is not None and got[1] is None and decode_frame(reply)[0] is None,
+          "新格式校時回覆 (v10 flags=2) 收得到")
+    # CRC 壞掉 → 丟棄
+    bad = bytearray(frames[10]); bad[20] ^= 0xFF
+    n0 = link.stats['crc']
+    link._buf.extend(bytes(bad))
+    check(link._extract() is None and link.stats['crc'] > n0, "CRC 錯 → 丟棄")
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -393,6 +462,7 @@ def test_flight():
 
 def main():
     test_geometry()
+    test_uart_protocol()
     test_source()
     test_sim()
     test_flight()

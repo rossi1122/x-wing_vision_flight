@@ -39,8 +39,31 @@ SEARCH 段原本就沒有逾時：一直沒看到車就不會推頭，**由駕�
 | `pitch` | **對地**角度，往下為負，**拍照那一刻**的值 | 直接當相機俯仰 |
 | `roll` | 相機 roll，雲台維持 0° | 直接使用 |
 | yaw | **沒有 yaw 軸**，相機朝機頭 | 相機方位 = 飛機 yaw (+ 安裝偏差) |
-| `cap_mono` (v7/v8) | 取像時刻 (UART 校時換到本機) | 查拍照那一刻的飛機航向 |
-| 雷射 (v8) | 不準 | 只記錄 |
+| `yaw` 欄位 (新格式) | 共用接收端 V6 新增；定義待對方確認 | 預設不用 (`GIMBAL_YAW_MODE='none'`)，只記錄到 `vis_gimbal_yaw` |
+| `cap_mono` (v7/v8/新格式) | 取像時刻 (UART 校時換到本機) | 查拍照那一刻的飛機航向 |
+| 雷射 (v8/新格式) | 不準 | 只記錄 |
+
+### 2.1 UART 協定：共用接收端 V6 (2026/11/09)
+`uart_mipi_receiver.py` 換成對方新給的「共用雲台接收端 V6」(台鴞／田屋 30 倍／田屋 10 倍)。
+
+| 版本號 | 資料區 | 完整封包 | 內容 |
+|---|---|---|---|
+| 舊 6 | 61 B | 71 B | 基本欄位 |
+| 舊 7 | 73 B | 83 B | + 取像時間戳 (校時) |
+| 舊 8 | 77 B | 87 B | + 雷射距離 |
+| **新 0~5 / 10** | **81 B** | **91 B** | **+ 雲台 yaw** |
+
+- 校時請求要用**對方的版本號**送 (新格式)，舊格式維持送 7；`xwing_uart_vision.py` 已自動處理。
+- 舊格式照樣收得到，yaw 記成空白。
+- **雲台 yaw 怎麼用** (`xwing_vision_config.py` 的 `GIMBAL_YAW_MODE`)：
+
+  | 值 | 意義 | 相機方位 |
+  |---|---|---|
+  | `'none'` (預設) | 不用 yaw (= 先前確認的「沒有 yaw 軸」) | 飛機 yaw |
+  | `'body'` | yaw = 相機相對機頭 (右為正) | 飛機 yaw + yaw |
+  | `'earth'` | yaw = 相機真方位 | yaw |
+
+  yaw 收到 NaN 時一律當 `'none'`。正負號相反就設 `GIMBAL_YAW_SIGN = -1`。
 
 水平距 = 高度 ÷ tan(看車的俯角)；看車的俯角 = 雲台往下角度 + 車在畫面上下偏的角度。
 
@@ -52,9 +75,10 @@ SEARCH 段原本就沒有逾時：一直沒看到車就不會推頭，**由駕�
 | `xwing_vision_config.py` | 新增 | 參數 = B 的 `xwing_virtual_config.py` (11/04 版)，另加相機校正值與資料過期時間 |
 | `xwing_vision_common.py` | 新增 | = B 的 `xwing_virtual_common.py` (狀態機參數相同) |
 | `vision_guidance.py` | 新增 | `VisionSource`：偵測結果 → 與虛擬目標同名的欄位 |
-| `uart_mipi_receiver.py` / `xwing_uart_vision.py` / `xwing_uart_sender_sim.py` | 從 B 複製 (未改) | 對方 UART v8 協定、背景接收、模擬發送端 |
+| `uart_mipi_receiver.py` | 對方 11/09 新版 (未改) | 共用雲台接收端 V6 (新格式 0~5 / 10 + 舊 v6/v7/v8) |
+| `xwing_uart_vision.py` / `xwing_uart_sender_sim.py` | 從 B 複製，改成支援新格式 | 背景接收 (新增 `vis_gimbal_yaw`)、模擬發送端 (預設送 v10，`--yaw-deg`) |
 | `vision_sim_camera.py` / `xwing_vision_sim.py` | 新增 | 桌上閉迴路模擬 (真車 + 模擬對方雲台) |
-| `test_vision_guidance.py` | 新增 | 38 項測試 |
+| `test_vision_guidance.py` | 新增 | 51 項測試 |
 
 `dive_guidance.py`、`attitude_bridge.py`、`run_vision_flight.py` 等原檔**都沒有改**。
 
@@ -90,7 +114,7 @@ python3 xwing_vision_flight.py --bench            # 掛機
 ## 6. 測試結果 (桌上)
 
 ```bash
-python3 test_vision_guidance.py     # → PASS (38 項)
+python3 test_vision_guidance.py     # → PASS (51 項)
 python3 xwing_vision_sim.py --all   # 各情境總表
 ```
 

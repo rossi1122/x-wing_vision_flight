@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-xwing_uart_sender_sim.py — 模擬對方實驗室 Orin NX 的 UART 發送端 (v8, 可選 v7)
+xwing_uart_sender_sim.py — 模擬對方實驗室 Orin NX 的 UART 發送端 (共用接收端 V6 新格式, 可選舊 v7 / v8)
 ═══════════════════════════════════════════════════════════════════
 用途: 對方的雲台 / Orin NX 還沒到之前, 在本機驗證接收端與模式鍵流程.
 
-  · 以 --hz 送 v8 遙測封包 (格式與 uart_mipi_receiver.py 完全相同, CRC-16/CCITT-FALSE);
-    v8 = v7 + 雷射距離 (--laser-m, 每 3 s 有 1 s 量不到 = NaN); --version 7 送舊格式
-  · 回覆 v7 校時請求 (flags=1 → flags=2), 自己的時鐘故意加一個偏移, 驗證校時有效
+  · 以 --hz 送遙測封包 (格式與 uart_mipi_receiver.py 完全相同, CRC-16/CCITT-FALSE);
+    預設 --version 10 = 共用接收端 V6 新格式 (v8 + 雲台 yaw, --yaw-deg; 0~5 / 10 格式相同);
+    v8 = v7 + 雷射距離 (--laser-m, 每 3 s 有 1 s 量不到 = NaN); --version 7 / 8 送舊格式
+  · 回覆校時請求 (flags=1 → flags=2, 版本號與請求相同), 自己的時鐘故意加一個偏移, 驗證校時有效
   · 收到 ASCII '0'/'1'/'2' → 切換回報的 mode 欄位 (模擬雲台切模式)
   · 模擬對方雲台 (2026/10 確認的行為):
       只有 pitch 軸, 往下為負;
@@ -39,6 +40,8 @@ from uart_mipi_receiver import (FRAME_MAGIC, HEADER_FMT, HEADER_SIZE, BASE_FMT,
 
 CLOCK_OFFSET_NS = 123_456_789_000      # 模擬兩台電腦時鐘不同 (約 123 s)
 SESSION = 0x5A17
+NEW_VERSIONS = (0, 1, 2, 3, 4, 5, 10)  # 共用接收端 V6 新格式 (= v8 + yaw)
+CLOCK_VERSIONS = NEW_VERSIONS + (7,)   # 校時請求: 新格式用自己的版本號, 舊格式用 7
 
 
 def _frame(version, flags, payload):
@@ -100,9 +103,11 @@ class Sim:
                               pitch, roll, self.mode, self.result_id,
                               float(a.latency_ms), 5.0)
         payload += struct.pack('>QI', cap, SESSION)
-        if a.version == 8:
+        if a.version != 7:                     # v8 / 新格式: 雷射距離
             laser = a.laser_m + 5.0 * math.sin(0.2 * t) if (t % 3.0) >= 1.0 else float('nan')
             payload += struct.pack('>f', laser)
+        if a.version in NEW_VERSIONS:          # 新格式: 雲台 yaw
+            payload += struct.pack('>f', a.yaw_deg)
         return _frame(a.version, 0, payload)
 
     def handle_rx(self, data):
@@ -112,7 +117,8 @@ class Sim:
                 if len(self.rx) < HEADER_SIZE:
                     return
                 _, ver, flags, length, lx = struct.unpack(HEADER_FMT, self.rx[:HEADER_SIZE])
-                if not (ver == 7 and flags == 1 and length == 8 and lx == (8 ^ 0xFFFF)):
+                if not (ver in CLOCK_VERSIONS and flags == 1
+                        and length == 8 and lx == (8 ^ 0xFFFF)):
                     del self.rx[0]
                     continue
                 size = HEADER_SIZE + length + CRC_SIZE
@@ -125,7 +131,7 @@ class Sim:
                 t2 = remote_now()
                 (t1,) = struct.unpack('>Q', frame[HEADER_SIZE:-CRC_SIZE])
                 t3 = remote_now()
-                self.write(_frame(7, 2, struct.pack('>QQQI', t1, t2, t3, SESSION)))
+                self.write(_frame(ver, 2, struct.pack('>QQQI', t1, t2, t3, SESSION)))
                 self.clock_replies += 1
             elif self.rx[0] in b'012':
                 self.mode = self.rx[0] - ord('0')
@@ -151,8 +157,10 @@ def main():
     ap.add_argument('--mode', type=int, choices=(0, 1, 2), default=0,
                     help='開機時回報的模式 (預設 0 手動)')
     ap.add_argument('--no-target', action='store_true', help='目標欄位一律 NaN')
-    ap.add_argument('--version', type=int, choices=(7, 8), default=8,
-                    help='遙測封包版本 (預設 8 = 含雷射距離)')
+    ap.add_argument('--version', type=int, choices=NEW_VERSIONS + (7, 8), default=10,
+                    help='遙測封包版本 (預設 10 = 共用接收端 V6 新格式; 7 / 8 = 舊格式)')
+    ap.add_argument('--yaw-deg', type=float, default=0.0,
+                    help='新格式的雲台 yaw (度, 預設 0; NaN 可填 nan)')
     ap.add_argument('--laser-m', type=float, default=300.0, help='v8 模擬雷射距離 m (預設 300)')
     ap.add_argument('--slew-dps', type=float, default=40.0,
                     help='雲台 pitch 轉動速度 °/s (預設 40)')
@@ -216,7 +224,7 @@ def main():
     last_print = 0.0
     t_end = time.monotonic() + args.duration if args.duration > 0 else None
     print(f"[sim] 以 {args.hz:.0f} Hz 送 v{args.version} 封包 "
-          f"({HEADER_SIZE + BASE_SIZE + (16 if args.version == 8 else 12) + CRC_SIZE} B), "
+          f"({HEADER_SIZE + BASE_SIZE + {7: 12, 8: 16}.get(args.version, 20) + CRC_SIZE} B), "
           f"模擬延遲 {args.latency_ms:.0f} ms, Ctrl+C 結束", flush=True)
     try:
         while t_end is None or time.monotonic() < t_end:

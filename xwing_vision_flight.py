@@ -361,6 +361,12 @@ def main():
     cfg = XwingVisionConfig()
     fx, fy, cx, cy = cfg.virtual_intrinsics()
     use_vision = not args.virtual_control
+    if cfg.GIMBAL_YAW_MODE not in ('none', 'body', 'earth'):
+        print(f"[FATAL] GIMBAL_YAW_MODE 只能是 'none' / 'body' / 'earth' "
+              f"(現在是 {cfg.GIMBAL_YAW_MODE!r})")
+        sys.exit(1)
+    print(f"[xwing] 雲台 yaw 用法: GIMBAL_YAW_MODE={cfg.GIMBAL_YAW_MODE!r}"
+          + (" (不用 yaw, 相機方位 = 飛機 yaw)" if cfg.GIMBAL_YAW_MODE == 'none' else ""))
     if use_vision and args.no_vision:
         print("[FATAL] 目標來自偵測就一定要開雲台 UART; 沒接雲台請加 --virtual-control")
         sys.exit(1)

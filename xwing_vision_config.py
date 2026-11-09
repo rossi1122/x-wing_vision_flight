@@ -132,10 +132,17 @@ class XwingVisionConfig:
     GIMBAL_ROLL_SIGN = 1.0
     GIMBAL_ROLL_OFFSET_DEG = 0.0
     GIMBAL_YAW_OFFSET_DEG = 0.0       # ★ 地面校正: 光軸偏機頭右方幾度
+    # ── 雲台 yaw (2026/11/09 共用接收端 V6 新增的欄位) ──
+    #   'none'  : 不用 yaw, 相機方位 = 飛機 yaw (= 2026/11 確認的「沒有 yaw 軸」, 預設)
+    #   'body'  : yaw = 相機相對機頭 (右為正)   → 相機方位 = 飛機 yaw + yaw
+    #   'earth' : yaw = 相機真方位 (對地)       → 相機方位 = yaw
+    #   ★ 改之前先跟對方確認 yaw 的定義與正負號; yaw 收到 NaN 時一律當 'none'
+    GIMBAL_YAW_MODE = 'none'
+    GIMBAL_YAW_SIGN = 1.0
     POSE_MAX_GAP_S = 0.15             # 取像時刻找飛機姿態, 前後樣本最遠差距
 
     # ════════════════════════════════════════════════════════════
-    #  雲台視覺 UART (= xwing_virtual_config; 協定見 uart_mipi_receiver.py v8)
+    #  雲台視覺 UART (= xwing_virtual_config; 協定見 uart_mipi_receiver.py: 共用接收端 V6, 新格式 0~5 / 10, 也收舊 v6 / v7 / v8)
     # ════════════════════════════════════════════════════════════
     VISION_UART_ENABLED = True
     VISION_UART_PORT = '/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0'

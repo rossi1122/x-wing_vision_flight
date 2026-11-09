@@ -1,9 +1,10 @@
+# 共用雲台接收端 V6
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""共用 UART v8 接收程式，使用 big-endian 與 CRC-16/CCITT-FALSE。
+"""共用雲台接收端 V6（台鴞／田屋 30 倍／田屋 10 倍），亦可讀取舊格式 v6／v7／v8，使用 big-endian 與 CRC-16/CCITT-FALSE。
 
-v8 資料區 77 bytes，完整封包 87 bytes；NaN/Inf 顯示為 N/A。
-v7 使用 UART 往返校時估算取像至接收驗證延遲，並顯示校時不確定範圍。
+10X_V0 資料區 81 bytes，完整封包 91 bytes；末端新增獨立 yaw；NaN/Inf 顯示為 N/A。
+V0 使用 UART 往返校時估算取像至接收驗證延遲，並顯示校時不確定範圍。
 """
 
 import argparse
@@ -24,7 +25,7 @@ FIELD_LABELS = (
     "目標中心 X", "目標中心 Y", "水平偏移量", "垂直偏移量",
     "水平焦距 fx", "垂直焦距 fy", "光學中心 X", "光學中心 Y",
     "影像寬度", "影像高度", "雲台 Pitch 角度", "雲台 Roll 角度", "目前模式",
-    "result_id", "detection_age_ms", "angle_age_ms", "雷射距離",
+    "result_id", "detection_age_ms", "angle_age_ms", "雷射距離", "雲台 Yaw 角度",
 )
 
 # Orin NX 接 USB 轉 UART：請用 python3 -m serial.tools.list_ports -v 確認裝置。
@@ -34,7 +35,6 @@ UART_PORT = os.getenv("UART_PORT", "/dev/ttyUSB0")
 UART_BAUD = int(os.getenv("UART_BAUD", "115200"))  # 必須與發送端相同
 RX_DIAGNOSTIC_SEC = 3.0  # 多久未收到有效封包就顯示診斷
 FRAME_MAGIC = b"\xA5\x5A"
-FRAME_VERSION = 6
 HEADER_FMT = ">2sBBHH"
 HEADER_SIZE = struct.calcsize(HEADER_FMT)
 CRC_SIZE = 2
@@ -59,6 +59,7 @@ BASE_FIELDS = [
     ("detection_age_ms", "ms"),
     ("angle_age_ms", "ms"),
     ("laser_distance_m", "m"),
+    ("yaw", "deg"),
 ]
 
 
@@ -87,7 +88,7 @@ def decode_frame(frame):
     magic, version, flags, length, length_xor = struct.unpack(
         HEADER_FMT, frame[:HEADER_SIZE]
     )
-    expected = {(6, 0): BASE_SIZE, (7, 0): BASE_SIZE+12, (8, 0): BASE_SIZE+16, (7, 2): 28}.get((version, flags))
+    expected = {(6, 0): BASE_SIZE, (7, 0): BASE_SIZE+12, (8, 0): BASE_SIZE+16, (0, 0): BASE_SIZE+20, (1, 0): BASE_SIZE+20, (2, 0): BASE_SIZE+20, (3, 0): BASE_SIZE+20, (4, 0): BASE_SIZE+20, (5, 0): BASE_SIZE+20, (10, 0): BASE_SIZE+20, (0, 2): 28, (1, 2): 28, (2, 2): 28, (3, 2): 28, (4, 2): 28, (5, 2): 28, (10, 2): 28, (7, 2): 28}.get((version, flags))
     if magic != FRAME_MAGIC or expected is None:
         raise ValueError('不支援的封包版本或類型')
     if length != expected or length_xor != (length ^ 0xFFFF) or len(frame) != HEADER_SIZE+length+CRC_SIZE:
@@ -98,16 +99,18 @@ def decode_frame(frame):
     if flags == 2:
         return None, crc_recv
     values = decode_base(frame[HEADER_SIZE:HEADER_SIZE+BASE_SIZE])
-    distance = struct.unpack('>f', frame[-6:-2])[0] if version == 8 else float('nan')
+    distance = struct.unpack_from('>f', frame, HEADER_SIZE+BASE_SIZE+12)[0] if version in (0, 1, 2, 3, 4, 5, 10, 8) else float('nan')
     if not math.isfinite(distance) or distance < 0:
         distance = float('nan')
-    return values + (distance,), crc_recv
+    yaw = struct.unpack_from('>f', frame, HEADER_SIZE+BASE_SIZE+16)[0] if version in (0, 1, 2, 3, 4, 5, 10) else float('nan')
+    return values + (distance, yaw), crc_recv
 
 
 class UARTClock:
     """以四個單調時間估算時差；最短往返樣本優先，不假定結果精確無誤。"""
     def __init__(self):
         self.pending = {}
+        self.protocol_version = 0
         self.samples = deque(maxlen=16)
         self.last_request = 0
         self.seen = deque(maxlen=1024)
@@ -127,7 +130,7 @@ class UARTClock:
         if now-self.last_request < 2_000_000_000:
             return
         self.pending = {key: value for key, value in self.pending.items() if now-key < 10_000_000_000}
-        header = struct.pack(HEADER_FMT, FRAME_MAGIC, 7, 1, 8, 8^0xffff)
+        header = struct.pack(HEADER_FMT, FRAME_MAGIC, self.protocol_version, 1, 8, 8^0xffff)
         data = header+struct.pack('>Q', now)
         frame = data+struct.pack('>H', crc16_ccitt_false(data[2:]))
         if ser.write(frame) != len(frame):
@@ -147,7 +150,7 @@ class UARTClock:
         self.samples.append((received, session, offset, rtt/2))
 
     def estimate(self, frame, received, result_id):
-        if frame[2] not in (7, 8):
+        if frame[2] not in (0, 1, 2, 3, 4, 5, 10, 7, 8):
             return '端到端：N/A（v6 沒有取像時間戳）'
         capture, session = struct.unpack('>QI', frame[8+BASE_SIZE:8+BASE_SIZE+12])
         candidates = [s for s in self.samples if s[1] == session and 0 <= received-s[0] <= 10_000_000_000]
@@ -168,7 +171,7 @@ class UARTClock:
             self.seen.append(key)
         label = '同一結果重送' if repeated else '新結果首次接收'
         text = (f'取像完成至 UART 驗證：估計 {value:.2f} ms，校時 ±{error:.2f} ms '
-                f'（{label}；不含相機至取像前的延遲，漂移假設 200 ppm）')
+                f'（{label}；不含相機至取像前的延遲）')
         if self.input_delay is None:
             return text
         return (text+f'\n含前段校正的總延遲估計：{value+self.input_delay:.2f} ms '
@@ -182,6 +185,8 @@ def convert_value(index, value):
         return str(value)
     if not math.isfinite(value):
         return "N/A"
+    if index in (10, 11, 17):
+        return f"{value:.3f}°"
     unit = BASE_FIELDS[index][1]
     if index == 16:
         return f'{value:.1f} {unit}'
@@ -258,7 +263,7 @@ class UARTReceiver:
                 self.rx_errors["crc"] += 1
                 del self.buffer[0]
                 continue
-            expected = {(6, 0): BASE_SIZE, (7, 0): BASE_SIZE+12, (8, 0): BASE_SIZE+16, (7, 2): 28}.get((version, flags))
+            expected = {(6, 0): BASE_SIZE, (7, 0): BASE_SIZE+12, (8, 0): BASE_SIZE+16, (0, 0): BASE_SIZE+20, (1, 0): BASE_SIZE+20, (2, 0): BASE_SIZE+20, (3, 0): BASE_SIZE+20, (4, 0): BASE_SIZE+20, (5, 0): BASE_SIZE+20, (10, 0): BASE_SIZE+20, (0, 2): 28, (1, 2): 28, (2, 2): 28, (3, 2): 28, (4, 2): 28, (5, 2): 28, (10, 2): 28, (7, 2): 28}.get((version, flags))
             if (expected is None or length != expected
                     or length_xor != (length ^ 0xFFFF)):
                 self.rx_errors["header"] += 1
@@ -276,8 +281,9 @@ class UARTReceiver:
                 del self.buffer[0]
                 continue
             self.received_ns = time.monotonic_ns()
-            # 只有看見 v7／v8 資料才送校時，避免舊發送器誤認二進位為模式鍵。
-            self.clock_enabled = version in (7, 8)
+            # 只有看見 10X_V0／V1 或舊格式 v7／v8 資料才送校時，避免舊發送器誤認二進位為模式鍵。
+            self.clock_enabled = version in (0, 1, 2, 3, 4, 5, 10, 7, 8)
+            self.clock.protocol_version = version if version in (0, 1, 2, 3, 4, 5, 10) else 7
             del self.buffer[:frame_size]
             return frame
 
@@ -377,8 +383,11 @@ class UARTReceiver:
         print(latency_text)
         print(f"{'Idx':<5}{'Field':<20}{'Value':<24}")
         print("-" * 60)
-        for index, value in enumerate(values):
-            print(f"{index:<5}{FIELD_LABELS[index]:<20}{convert_value(index, value):<24}")
+        # 顯示順序獨立於封包索引，保留各型號原有資料與模式對應。
+        display_order = (*range(10), 10, 17, 11, *range(12, 17))
+        for display_index, index in enumerate(display_order):
+            text = convert_value(index, values[index])
+            print(f"{display_index:<5}{FIELD_LABELS[index]:<20}{text:<24}")
         print("偏移量：向右／向下為正，向左／向上為負；N/A 表示無目標或角度無效。")
         return dict(zip((name for name, _ in BASE_FIELDS), values))
 
@@ -422,7 +431,7 @@ def main():
     except (RuntimeError, OSError, ValueError) as error:
         print(f'接收端啟動失敗：{error}')
         raise SystemExit(1)
-    print(f"UART Receiver v6/v7/v8 Started: {rx.port} @ {UART_BAUD}, 8N1；v7 自動 UART 校時")
+    print(f"共用雲台接收端 V6（台鴞／田屋 30 倍／田屋 10 倍）： {rx.port} @ {UART_BAUD}, 8N1；v7 自動 UART 校時")
     try:
         print("0：手動；1：追蹤；2：鎖定；Q / Esc：結束。請聚焦此終端。")
         with keyboard_input():

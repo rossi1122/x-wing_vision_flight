@@ -60,14 +60,22 @@ except ImportError as _e:          # 沒裝 pyserial 時, 主程式仍可在關�
 
 # 對方協定允許的 (version, flags) → payload 長度 (與 uart_mipi_receiver 相同)
 _EXPECTED = None
+# 共用接收端 V6 的新版本號 (資料 = v8 + yaw); 舊格式 v7 / v8 也有取像時間戳
+NEW_VERSIONS = (0, 1, 2, 3, 4, 5, 10)
+TIMESTAMP_VERSIONS = NEW_VERSIONS + (7, 8)
 
 
 def _expected_lengths():
     global _EXPECTED
     if _EXPECTED is None:
         # v8 (2026/11): v7 + 雷射距離 float (4 B) 接在時間戳後面
+        # 共用接收端 V6 (2026/11/09): 新版本號 0~5 / 10 (台鴞 / 田屋 30 倍 / 田屋 10 倍),
+        #   = v8 + 雲台 yaw float (4 B); 校時回覆 flags=2 也用同一個版本號.
         _EXPECTED = {(6, 0): BASE_SIZE, (7, 0): BASE_SIZE + 12,
                      (8, 0): BASE_SIZE + 16, (7, 2): 28}
+        for v in NEW_VERSIONS:
+            _EXPECTED[(v, 0)] = BASE_SIZE + 20
+            _EXPECTED[(v, 2)] = 28
     return _EXPECTED
 
 
@@ -128,13 +136,14 @@ class _TxTap:
 # ══════════════════════════════════════════════════════════════════
 VISION_CSV_FIELDS = [
     'vis_link',          # 1 = 串口開著且近期有有效封包
-    'vis_ver',           # 封包版本 6 / 7 / 8
+    'vis_ver',           # 封包版本: 舊 6 / 7 / 8; 共用接收端 V6 新格式 0~5 / 10
     'vis_rx_age_ms',     # 最新封包是多久前收到的 (本機)
     'vis_result_id', 'vis_new',          # vis_new=1: 這拍拿到新的辨識結果
     'vis_valid',         # 1 = 有目標且數值有限
     'vis_tgt_cx', 'vis_tgt_cy', 'vis_off_x', 'vis_off_y',
     'vis_fx', 'vis_fy', 'vis_cx', 'vis_cy', 'vis_img_w', 'vis_img_h',
     'vis_gimbal_pitch', 'vis_gimbal_roll', 'vis_gimbal_mode',
+    'vis_gimbal_yaw',    # 共用接收端 V6 新格式才有 (0~5 / 10); 舊格式 / NaN 留空
     'vis_det_age_ms', 'vis_angle_age_ms',  # 對方送出時, 辨識 / 角度資料的年齡
     'vis_e2e_ms', 'vis_e2e_err_ms',      # v7: 取像 → 本機收到 (含校時誤差)
     'vis_cap_age_ms',    # v7: 控制這一拍時, 該影像已多舊
@@ -565,14 +574,17 @@ class UartVisionLink:
             self.clock.accept(frame, rx_ns)
             self.stats['clock'] += 1
             return
-        self._clock_enabled = version in (7, 8)
+        self._clock_enabled = version in TIMESTAMP_VERSIONS
+        # 校時請求要用對方的版本號 (新格式) / 舊格式一律 7 (同 uart_mipi_receiver)
+        self.clock.protocol_version = version if version in NEW_VERSIONS else 7
         self.stats['frames'] += 1
         self.last_frame_mono = rx_ns / 1e9
         d = dict(zip((name for name, _ in BASE_FIELDS), values))
         d['ver'] = version
         d['rx_mono'] = rx_ns / 1e9
         d['e2e_ms'] = d['e2e_err_ms'] = d['cap_mono'] = None
-        if version in (7, 8):
+        d.setdefault('yaw', float('nan'))     # v6/v7/v8 沒有 yaw
+        if version in TIMESTAMP_VERSIONS:
             e2e, err, cap_mono = self._latency(frame, rx_ns)
             d['e2e_ms'], d['e2e_err_ms'], d['cap_mono'] = e2e, err, cap_mono
         d['valid'] = all(_finite(d.get(k)) for k in
@@ -592,7 +604,7 @@ class UartVisionLink:
                     tm['pitch_settled'] = d['pitch']
 
     def _latency(self, frame, rx_ns):
-        """v7/v8: (取像→收到 ms, 校時不確定 ms, 取像時刻(本機 monotonic 秒)).
+        """v7/v8/新格式: (取像→收到 ms, 校時不確定 ms, 取像時刻(本機 monotonic 秒)).
         與 UARTClock.estimate 同一套算法, 但回傳數值而非文字."""
         # 時間戳緊接在 BASE 後面 12 B (v8 之後還有 4 B 雷射距離, 不能切到 CRC 前)
         off = HEADER_SIZE + BASE_SIZE
@@ -689,6 +701,7 @@ def vision_row(link, pkt, last_result_id, now_mono, ctrl_fx, ctrl_fy,
         vis_img_w=r(pkt['image_width'], 0), vis_img_h=r(pkt['image_height'], 0),
         vis_gimbal_pitch=r(pkt['pitch']), vis_gimbal_roll=r(pkt['roll']),
         vis_gimbal_mode=pkt['mode'],
+        vis_gimbal_yaw=r(pkt.get('yaw')),
         vis_det_age_ms=r(pkt['detection_age_ms'], 1),
         vis_angle_age_ms=r(pkt['angle_age_ms'], 1),
         vis_e2e_ms=r(pkt['e2e_ms']), vis_e2e_err_ms=r(pkt['e2e_err_ms']),

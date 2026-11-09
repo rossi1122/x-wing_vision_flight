@@ -151,7 +151,7 @@ class SimGimbalCamera:
                 'mode': self.mode, 'result_id': self._rid,
                 'detection_age_ms': self.latency * 1000.0,
                 'angle_age_ms': self.latency * 1000.0,
-                'laser_distance_m': NAN, 'ver': 8,
+                'laser_distance_m': NAN, 'yaw': 0.0, 'ver': 10,
                 'cap_mono': t, 'e2e_ms': self.latency * 1000.0, 'e2e_err_ms': 1.0,
                 'valid': seen,
             }

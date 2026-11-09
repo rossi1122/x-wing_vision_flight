@@ -23,6 +23,12 @@ VisionSource.get_fields() 輸出的欄位與 virtual_source.VirtualSource.get_fi
     · 沒有 yaw 軸: 相機永遠朝機頭 → 相機方位 = 飛機 yaw (+ 安裝偏差)
   與 gimbal_pid_compensation.camera_matrix 的 'earth_pitch_roll_body_yaw'
   同一條旋轉鏈 (雲台 yaw 固定 0).
+
+  ★ 2026/11/09 共用接收端 V6: 封包多了雲台 yaw 欄位. 怎麼用由 GIMBAL_YAW_MODE 決定:
+    'none'  (預設) 不用 yaw, 相機方位 = 飛機 yaw  (= 上面確認的「沒有 yaw 軸」)
+    'body'  yaw = 相機相對機頭的角度 (右為正) → 相機方位 = 飛機 yaw + yaw
+    'earth' yaw = 相機的真方位 (對地)         → 相機方位 = yaw
+  yaw 是 NaN (舊格式 / 對方沒給) 時一律退回 'none'.
 """
 
 import math
@@ -43,6 +49,21 @@ def camera_from_ned(pitch_deg, roll_deg, yaw_deg):
             @ rot_z_np(math.radians(yaw_deg)))
 
 
+def camera_yaw(pkt, ac_yaw, cfg):
+    """相機真方位 (度). 依 GIMBAL_YAW_MODE 決定要不要用封包的雲台 yaw."""
+    mode = getattr(cfg, 'GIMBAL_YAW_MODE', 'none')
+    gy = pkt.get('yaw')
+    off = cfg.GIMBAL_YAW_OFFSET_DEG
+    if mode == 'none' or not _finite(gy):
+        return ac_yaw + off
+    gy = getattr(cfg, 'GIMBAL_YAW_SIGN', 1.0) * gy
+    if mode == 'body':
+        return ac_yaw + gy + off
+    if mode == 'earth':
+        return gy + off
+    raise ValueError(f"GIMBAL_YAW_MODE 只能是 'none' / 'body' / 'earth', 收到 {mode!r}")
+
+
 def measure(pkt, pose_angles, agl, cfg, ctrl):
     """一筆有目標的封包 → 幾何量 dict; 射線沒朝下就回 None.
     pose_angles = (roll, pitch, yaw, course) 取像時刻的飛機姿態 (度).
@@ -53,7 +74,7 @@ def measure(pkt, pose_angles, agl, cfg, ctrl):
     _roll, ac_pitch, ac_yaw, course = pose_angles
     p = cfg.GIMBAL_PITCH_SIGN * pkt['pitch'] + cfg.GIMBAL_PITCH_OFFSET_DEG
     r = cfg.GIMBAL_ROLL_SIGN * pkt['roll'] + cfg.GIMBAL_ROLL_OFFSET_DEG
-    cam_yaw = ac_yaw + cfg.GIMBAL_YAW_OFFSET_DEG
+    cam_yaw = camera_yaw(pkt, ac_yaw, cfg)
     ray = camera_from_ned(p, r, cam_yaw).T @ ray_cam
     n, e, d = ray / np.linalg.norm(ray)
     horiz = math.hypot(n, e)
