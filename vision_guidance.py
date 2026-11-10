@@ -25,6 +25,9 @@ VisionSource.get_fields() 輸出的欄位與 virtual_source.VirtualSource.get_fi
   同一條旋轉鏈 (雲台 yaw 固定 0).
 
   ★ 2026/11/09 共用接收端 V6: 封包多了雲台 yaw 欄位. 怎麼用由 GIMBAL_YAW_MODE 決定:
+    (2026/11/10 確認: yaw 是對地角度, 雲台 yaw 保持置中 = 相機一直朝機頭
+     → 跟飛控機頭航向是同一個方向. 預設仍用飛控航向 'none', 雲台 yaw 只記錄對照
+       vg_yaw_diff_deg; 實飛確認一致再考慮 'earth')
     'none'  (預設) 不用 yaw, 相機方位 = 飛機 yaw  (= 上面確認的「沒有 yaw 軸」)
     'body'  yaw = 相機相對機頭的角度 (右為正) → 相機方位 = 飛機 yaw + yaw
     'earth' yaw = 相機的真方位 (對地)         → 相機方位 = yaw
@@ -110,6 +113,10 @@ VG_CSV_FIELDS = [
     'vg_ground_m', 'vg_slant_m',
     'vg_tgt_n', 'vg_tgt_e', 'vg_tgt_lat', 'vg_tgt_lon',
     'gcomp_u', 'gcomp_v',
+    # 雲台 yaw (對地, 相機朝機頭) 與飛控機頭航向的對照 — 每筆新封包都算, 不管有沒有車.
+    #   相機朝機頭時 vg_yaw_diff_deg 應該 ≈ 固定值 (磁北/真北差 + 安裝偏差), 抖動小
+    #   才考慮改 GIMBAL_YAW_MODE='earth'.
+    'vg_ac_yaw_deg', 'vg_gimbal_yaw_deg', 'vg_yaw_diff_deg',
 ]
 
 
@@ -128,6 +135,7 @@ class VisionSource:
         self._cur = None               # 最新一筆辨識結果的量測 (看不到 = None)
         self._reason = 'no_data'
         self._last = None              # 最後一次看到目標的量測 (航向用, 跟丟時保持)
+        self._yaw_cmp = None           # (取像時飛機 yaw, 雲台 yaw, 差值) — 只記錄
 
     @property
     def last_valid(self):
@@ -140,9 +148,15 @@ class VisionSource:
             tcap, src = pkt['cap_mono'], 'capture'
         else:
             tcap, src = pkt['rx_mono'], 'rx'
+        pose = pose_history.at(tcap, cfg.POSE_MAX_GAP_S)
+        gy = pkt.get('yaw')
+        if pose is not None and _finite(gy):
+            ay = pose['angles'][2] % 360.0
+            self._yaw_cmp = (ay, gy % 360.0, wrap_deg(gy - ay))
+        else:
+            self._yaw_cmp = None
         if not pkt.get('valid'):
             return 'no_target'
-        pose = pose_history.at(tcap, cfg.POSE_MAX_GAP_S)
         if pose is None:
             return 'no_pose'
         m = measure(pkt, pose['angles'], agl, cfg, self.ctrl)
@@ -207,6 +221,9 @@ class VisionSource:
                        vg_ground_m=r(cur['ground_m'], 1),
                        vg_slant_m=r(cur['slant_m'], 1),
                        gcomp_u=r(cur['comp_u'], 1), gcomp_v=r(cur['comp_v'], 1))
+        if self._yaw_cmp is not None:
+            ay, gy, dy = self._yaw_cmp
+            row.update(vg_ac_yaw_deg=r(ay), vg_gimbal_yaw_deg=r(gy), vg_yaw_diff_deg=r(dy))
         if last is not None:
             tn, te = last['tgt_n'], last['tgt_e']
             row.update(vg_tgt_n=r(tn, 1), vg_tgt_e=r(te, 1))

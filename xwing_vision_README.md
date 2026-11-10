@@ -39,7 +39,7 @@ SEARCH 段原本就沒有逾時：一直沒看到車就不會推頭，**由駕�
 | `pitch` | **對地**角度，往下為負，**拍照那一刻**的值 | 直接當相機俯仰 |
 | `roll` | 相機 roll，雲台維持 0° | 直接使用 |
 | yaw | **沒有 yaw 軸**，相機朝機頭 | 相機方位 = 飛機 yaw (+ 安裝偏差) |
-| `yaw` 欄位 (新格式) | 共用接收端 V6 新增；定義待對方確認 | 預設不用 (`GIMBAL_YAW_MODE='none'`)，只記錄到 `vis_gimbal_yaw` |
+| `yaw` 欄位 (新格式) | **對地**角度；雲台 yaw 保持置中，相機一直朝機頭 (2026/11/10 確認) | 不拿來算 (`GIMBAL_YAW_MODE='none'`，用飛控航向)；記錄到 `vis_gimbal_yaw`，並和飛控航向比對 `vg_yaw_diff_deg` |
 | `cap_mono` (v7/v8/新格式) | 取像時刻 (UART 校時換到本機) | 查拍照那一刻的飛機航向 |
 | 雷射 (v8/新格式) | 不準 | 只記錄 |
 
@@ -65,6 +65,15 @@ SEARCH 段原本就沒有逾時：一直沒看到車就不會推頭，**由駕�
 
   yaw 收到 NaN 時一律當 `'none'`。正負號相反就設 `GIMBAL_YAW_SIGN = -1`。
 
+  **目前設定 `'none'` 的理由** (11/10 確認 yaw 對地、相機朝機頭)：
+  這時雲台 yaw 和飛控機頭航向是**同一個方向**，兩個來源理論上一樣。
+  飛控航向是 EKF 融合 GPS／羅盤的結果，而且和目標位置、導航用同一個基準，所以優先用它。
+  雲台 yaw 的北方基準 (磁北／真北／開機方向) 和飄移量都還沒驗證過。
+
+  **怎麼驗證**：看 CSV 的 `vg_yaw_diff_deg` (= 雲台 yaw − 取像那一刻的飛控航向，每筆新封包都算，有沒有車都記)。
+  - 差值接近固定、抖動小 → 雲台 yaw 可信，固定的差值是磁北／真北差或安裝偏差。
+  - 差值會飄、轉彎時跳動 → 維持 `'none'`。
+
 水平距 = 高度 ÷ tan(看車的俯角)；看車的俯角 = 雲台往下角度 + 車在畫面上下偏的角度。
 
 ## 3. 檔案
@@ -78,7 +87,7 @@ SEARCH 段原本就沒有逾時：一直沒看到車就不會推頭，**由駕�
 | `uart_mipi_receiver.py` | 對方 11/09 新版 (未改) | 共用雲台接收端 V6 (新格式 0~5 / 10 + 舊 v6/v7/v8) |
 | `xwing_uart_vision.py` / `xwing_uart_sender_sim.py` | 從 B 複製，改成支援新格式 | 背景接收 (新增 `vis_gimbal_yaw`)、模擬發送端 (預設送 v10，`--yaw-deg`) |
 | `vision_sim_camera.py` / `xwing_vision_sim.py` | 新增 | 桌上閉迴路模擬 (真車 + 模擬對方雲台) |
-| `test_vision_guidance.py` | 新增 | 51 項測試 |
+| `test_vision_guidance.py` | 新增 | 57 項測試 |
 
 `dive_guidance.py`、`attitude_bridge.py`、`run_vision_flight.py` 等原檔**都沒有改**。
 
@@ -114,7 +123,7 @@ python3 xwing_vision_flight.py --bench            # 掛機
 ## 6. 測試結果 (桌上)
 
 ```bash
-python3 test_vision_guidance.py     # → PASS (51 項)
+python3 test_vision_guidance.py     # → PASS (57 項)
 python3 xwing_vision_sim.py --all   # 各情境總表
 ```
 

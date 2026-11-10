@@ -194,6 +194,17 @@ def test_source():
                             poses, 240.0, 570.0, 0.0)
     check(not f['tgt_valid'] and row['vg_reason'] == 'stale',
           "封包不再更新 (資料鏈斷) → 看不到")
+    # 雲台 yaw (對地, 相機朝機頭) 對照: 飛機 180°, 雲台回報 181.5° → 差 +1.5°; 沒車也記
+    f, row = src.get_fields(dict(pkt(4, nan, nan, 10.35), yaw=181.5), 10.35, poses,
+                            240.0, 570.0, 0.0)
+    check(row['vg_ac_yaw_deg'] == 180.0 and row['vg_gimbal_yaw_deg'] == 181.5
+          and abs(row['vg_yaw_diff_deg'] - 1.5) < 1e-6,
+          "雲台 yaw 對照: 飛機 180 / 雲台 181.5 → 差 +1.5° (沒車也記錄)")
+    f, row = src.get_fields(dict(pkt(5, nan, nan, 10.4), yaw=-179.0), 10.4, poses,
+                            240.0, 570.0, 0.0)
+    check(abs(row['vg_yaw_diff_deg'] - 1.0) < 1e-6, "雲台 yaw 對照: −179° 與 180° 差 +1° (跨 ±180 正確)")
+    check(f['tgt_n'] is not None and abs(f['tgt_e']) < 0.5,
+          "雲台 yaw 只記錄, 預設 'none' 不影響目標位置")
     src.reset()
     f, _ = src.get_fields(None, 11.0, poses, 240.0, 560.0, 0.0)
     check(f['tgt_n'] is None and not f['tgt_valid'],
@@ -452,6 +463,10 @@ def test_flight():
           and float(pre['vg_ground_m']) <= 416.0,
           "CSV: 推頭那拍的偵測水平距 ≤ 415.69 m")
     check(all(r['control'] == 'vision' for r in rows), "CSV: control = vision")
+    diffs = [abs(float(r['vg_yaw_diff_deg'])) for r in rows if r.get('vg_yaw_diff_deg')]
+    check(len(diffs) > 50 and max(diffs) < 1.0,
+          f"CSV: 雲台 yaw (對地, 置中) 對照飛控航向 {len(diffs)} 筆, 最大差 "
+          f"{max(diffs) if diffs else float('nan'):.2f}° (模擬兩者一致)")
 
     text, rows = run_flight([(2.0, True)], car_present=False, case='vtest_nocar',
                             stop_at=30.0)

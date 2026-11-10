@@ -136,7 +136,11 @@ class XwingVisionConfig:
     #   'none'  : 不用 yaw, 相機方位 = 飛機 yaw (= 2026/11 確認的「沒有 yaw 軸」, 預設)
     #   'body'  : yaw = 相機相對機頭 (右為正)   → 相機方位 = 飛機 yaw + yaw
     #   'earth' : yaw = 相機真方位 (對地)       → 相機方位 = yaw
-    #   ★ 改之前先跟對方確認 yaw 的定義與正負號; yaw 收到 NaN 時一律當 'none'
+    #   ★ 2026/11/10 確認: yaw = 對地角度, 雲台 yaw 保持置中 (相機一直朝機頭).
+    #     → 'none' 與 'earth' 理論上同一個方向. 維持 'none' (用飛控的機頭航向:
+    #       EKF 融合 GPS / 羅盤, 跟目標位置、導航同一個基準). 雲台 yaw 記在
+    #       vg_gimbal_yaw_deg / vg_yaw_diff_deg 對照, 差值穩定才考慮改 'earth'.
+    #   yaw 收到 NaN 時一律當 'none'
     GIMBAL_YAW_MODE = 'none'
     GIMBAL_YAW_SIGN = 1.0
     POSE_MAX_GAP_S = 0.15             # 取像時刻找飛機姿態, 前後樣本最遠差距

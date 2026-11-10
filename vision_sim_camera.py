@@ -151,7 +151,8 @@ class SimGimbalCamera:
                 'mode': self.mode, 'result_id': self._rid,
                 'detection_age_ms': self.latency * 1000.0,
                 'angle_age_ms': self.latency * 1000.0,
-                'laser_distance_m': NAN, 'yaw': 0.0, 'ver': 10,
+                'laser_distance_m': NAN, 'ver': 10,
+                'yaw': ac['yaw'] % 360.0,   # 對地, 雲台 yaw 置中 → = 機頭方位
                 'cap_mono': t, 'e2e_ms': self.latency * 1000.0, 'e2e_err_ms': 1.0,
                 'valid': seen,
             }
