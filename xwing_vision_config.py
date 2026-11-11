@@ -112,8 +112,19 @@ class XwingVisionConfig:
     MOVING_TARGET_LEAD = False  # 前置瞄準 (關: DIVE setpoint = 畫面中心, 純追擊)
     TARGET_GPS = MOVING_START_GPS
 
+    # ════════════════════════════════════════════════════════════
+    #  ★ 推頭依據 (2026/11/11 與老師討論後改)
+    #   'angle'    : 看車的俯角 (雲台往下角度 + 車在畫面上下偏的角度) ≥ 觸發角 就推頭.
+    #                不用高度 → 飛機高度偏差、目標區地面比起飛點高或低都不影響.
+    #   'distance' : 偵測水平距 (= 高度 / tan 俯角) ≤ PREDIVE_DIST_M (原本做法).
+    #   兩者在飛機剛好 240 m、地面與起飛點等高時是同一個時間點.
+    # ════════════════════════════════════════════════════════════
+    PREDIVE_TRIGGER = 'angle'
+    PREDIVE_TRIGGER_ANGLE_DEG = None  # None = 俯衝角 DIVE_ANGLE_DEG (30°)
+
     # 推頭距離 = 巡航高度 / tan(俯衝角) = 240 / tan30° = 415.69 m
-    #   (同原專案; 距離改由目標偵測算出)
+    #   (同原專案; distance 模式的門檻. angle 模式下狀態機仍比這個數字,
+    #    但餵進去的是等效距離, 見 vision_guidance.py)
     PREDIVE_DIST_M = CRUISE_AGL_M / math.tan(math.radians(DIVE_ANGLE_DEG))
     STATIC_PREDIVE_DIST_M = PREDIVE_DIST_M
 

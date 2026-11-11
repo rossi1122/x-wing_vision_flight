@@ -49,7 +49,7 @@ from dive_guidance import MissionStateMachine
 from attitude_bridge import ArduPilotAttitudeBridge, AttitudeBridgeConfig
 from attitude_time_history import AngleHistory
 from virtual_source import VirtualSource, gps_to_ned, extrapolate_impact, miss_distance
-from vision_guidance import VisionSource, VG_CSV_FIELDS
+from vision_guidance import VisionSource, VG_CSV_FIELDS, predive_trigger_angle_deg
 from xwing_uart_vision import VISION_CSV_FIELDS, vision_row, gimbal_state_label
 
 try:
@@ -335,7 +335,12 @@ def main():
     ap.add_argument('--target', type=str, default=None,
                     help='靜止虛擬目標 "lat,lon" (未給用 TARGET_GPS)')
     ap.add_argument('--predive-dist', type=float, default=None,
-                    help='推頭距離門檻 m (覆寫 PREDIVE_DIST_M)')
+                    help='推頭距離門檻 m (覆寫 PREDIVE_DIST_M; 只影響 distance 模式)')
+    ap.add_argument('--trigger', choices=('angle', 'distance'), default=None,
+                    help='推頭依據: angle = 看車俯角 ≥ 觸發角 (預設, PREDIVE_TRIGGER); '
+                         'distance = 偵測水平距 ≤ 門檻 (原本)')
+    ap.add_argument('--trigger-angle', type=float, default=None, metavar='DEG',
+                    help='angle 模式的觸發角 (度, 預設 = 俯衝角 30)')
     ap.add_argument('--tgt-heading', type=float, default=None, metavar='DEG',
                     help='虛擬目標方位 (度), 覆寫 config')
     ap.add_argument('--virtual-control', action='store_true',
@@ -361,6 +366,18 @@ def main():
     cfg = XwingVisionConfig()
     fx, fy, cx, cy = cfg.virtual_intrinsics()
     use_vision = not args.virtual_control
+    if args.trigger is not None:
+        cfg.PREDIVE_TRIGGER = args.trigger
+    if args.trigger_angle is not None:
+        cfg.PREDIVE_TRIGGER_ANGLE_DEG = float(args.trigger_angle)
+    if cfg.PREDIVE_TRIGGER not in ('angle', 'distance'):
+        print(f"[FATAL] PREDIVE_TRIGGER 只能是 'angle' / 'distance' "
+              f"(現在是 {cfg.PREDIVE_TRIGGER!r})")
+        sys.exit(1)
+    _trig_angle = predive_trigger_angle_deg(cfg)
+    if not (0.0 < _trig_angle < 90.0):
+        print(f"[FATAL] 觸發角 {_trig_angle} 不合理 (要在 0~90°)")
+        sys.exit(1)
     if cfg.GIMBAL_YAW_MODE not in ('none', 'body', 'earth'):
         print(f"[FATAL] GIMBAL_YAW_MODE 只能是 'none' / 'body' / 'earth' "
               f"(現在是 {cfg.GIMBAL_YAW_MODE!r})")
@@ -401,8 +418,13 @@ def main():
     print(f"[xwing] 巡航 {cfg.CRUISE_AGL_M:.0f} m / {cfg.V_CRUISE_MPS:.0f} m/s, "
           f"俯衝 {cfg.DIVE_ANGLE_DEG:.0f}° → {cfg.PULLOUT_AGL_M:.0f} m 拉平, "
           f"速度上限 {cfg.PULLOUT_VMAX_MPS:.0f} m/s")
-    print(f"[xwing] 推頭門檻: 到目標水平距 ≤ "
-          f"{predive_dist:.0f} m")
+    if use_vision and cfg.PREDIVE_TRIGGER == 'angle':
+        trigger_desc = f"看車俯角 ≥ {_trig_angle:.1f}° (不用高度)"
+    elif use_vision:
+        trigger_desc = f"偵測水平距 ≤ {predive_dist:.0f} m"
+    else:
+        trigger_desc = f"到虛擬目標水平距 ≤ {predive_dist:.0f} m"
+    print(f"[xwing] 推頭門檻: {trigger_desc}")
 
     rospy.init_node('xwing_vision_flight', anonymous=True)
     io = MavrosIO()
@@ -411,7 +433,7 @@ def main():
                       bench=args.bench, bench_pitch=args.bench_pitch,
                       bench_dive=args.bench_dive, ground_test=args.ground_test)
     sm = MissionStateMachine(gcfg, verbose=True)
-    vsrc = VisionSource(cfg, control_camera(cfg, gcfg))
+    vsrc = VisionSource(cfg, control_camera(cfg, gcfg), predive_dist_m=gcfg.PREDIVE_DIST_M)
 
     bcfg = apply_bridge_cfg(AttitudeBridgeConfig(), cfg)
     bridge = ArduPilotAttitudeBridge(dive_angle_deg=cfg.DIVE_ANGLE_DEG, cfg=bcfg)
@@ -493,7 +515,7 @@ def main():
     event(f"xwing_vision: 目標來源={'目標偵測' if use_vision else '虛擬軌跡'} "
           f"巡航 {cfg.CRUISE_AGL_M:.0f}m/{cfg.V_CRUISE_MPS:.0f}m/s "
           f"俯衝 {cfg.DIVE_ANGLE_DEG:.0f}° 拉平 {cfg.PULLOUT_AGL_M:.0f}m "
-          f"Vmax {cfg.PULLOUT_VMAX_MPS:.0f}m/s 推頭 {predive_dist:.0f}m")
+          f"Vmax {cfg.PULLOUT_VMAX_MPS:.0f}m/s 推頭: {trigger_desc}")
     event(f"DIVE 方向舵: 方向舵 PID (版本 A); 空速排程 RUDDER_VSCHED={cfg.RUDDER_VSCHED}")
     event(f"虛擬目標 ({'帶路 + 對照' if use_vision else '控制'}) "
           f"{'移動' if moving else '靜止'} 起點 {start_gps} 方位 {heading:.1f}° "
@@ -713,10 +735,13 @@ def main():
 
                 if out['mode'] != mode_prev:
                     _vd = _vg_fields.get('ground_m')
+                    _vdep = _vg_row.get('vg_depress_deg')
                     banner = (f"★★ MODE: {mode_prev} → {out['mode']} "
                               f"(t={t:.1f}s AGL="
                               f"{f'{agl:.1f}' if agl is not None else '?'} "
-                              f"V={V:.1f} 偵測水平距="
+                              f"V={V:.1f} 看車俯角="
+                              f"{f'{_vdep:.1f}°' if _vdep not in (None, '') else '—'} "
+                              f"偵測水平距="
                               f"{f'{_vd:.0f}m' if _vd is not None else '—'} "
                               f"虛擬水平距={vfields['ground_m']:.0f}m "
                               f"pitch_cmd={out['pitch_cmd_deg']:+.1f} "
@@ -902,8 +927,10 @@ def main():
                     _vs = ''
                     if vision is not None:
                         _vd = _vg_fields.get('ground_m')
+                        _vdep = _vg_row.get('vg_depress_deg')
                         _vs = (f" | VIS link={_vrow['vis_link']} "
                                f"det={int(_vg_fields['tgt_valid'])} "
+                               f"dep={f'{_vdep:.1f}°' if _vdep not in (None, '') else '-'} "
                                f"dist={f'{_vd:.0f}m' if _vd is not None else '-'} "
                                f"gmode={_vrow['vis_gimbal_mode'] if _vrow['vis_gimbal_mode'] != '' else '-'}"
                                f"(req {_vrow['gimbal_mode_req'] or '-'}) "

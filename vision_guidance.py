@@ -9,7 +9,13 @@ VisionSource.get_fields() 輸出的欄位與 virtual_source.VirtualSource.get_fi
 
     tgt_n, tgt_e      目標地面位置 (NED)      → SEARCH / PRE_DIVE 航向 = 飛機指向它
     tgt_valid         這拍看得到目標           → PRE_DIVE / DIVE 目標遺失中止 (原邏輯)
-    ground_m, slant_m, predive_dist_m          → 推頭: predive_dist_m ≤ 415.69 m (原邏輯)
+    ground_m, slant_m                          → log / PRE_DIVE 視線俯角
+    predive_dist_m                             → 推頭: predive_dist_m ≤ PREDIVE_DIST_M (原邏輯)
+        ★ 2026/11/11 推頭依據改用「看車的俯角」(PREDIVE_TRIGGER='angle', 預設):
+          predive_dist_m 改填「等效距離」= PREDIVE_DIST_M × tan(觸發角) / tan(看車俯角),
+          狀態機照原本比 ≤ PREDIVE_DIST_M, 結果 ⇔ 看車俯角 ≥ 觸發角 (30°).
+          不用高度, 地面高低 / 氣壓高度誤差都不影響推頭時機.
+          PREDIVE_TRIGGER='distance' 退回原本: predive_dist_m = 偵測水平距.
     bbox_detected, bbox_u, bbox_v,             → DIVE PID / 偏離中止 (原邏輯)
     bbox_center_offset_norm
 
@@ -50,6 +56,20 @@ def camera_from_ned(pitch_deg, roll_deg, yaw_deg):
     """NED → 相機 (CV: X 右 Y 下 Z 前). pitch/roll 為對地角, yaw 為相機真方位."""
     return (R_G2C @ rot_y_np(math.radians(pitch_deg)) @ rx(roll_deg)
             @ rot_z_np(math.radians(yaw_deg)))
+
+
+def predive_trigger(cfg):
+    """推頭依據: 'angle' (看車俯角, 預設) / 'distance' (偵測水平距, 原本)."""
+    t = getattr(cfg, 'PREDIVE_TRIGGER', 'distance')
+    if t not in ('angle', 'distance'):
+        raise ValueError(f"PREDIVE_TRIGGER 只能是 'angle' / 'distance', 收到 {t!r}")
+    return t
+
+
+def predive_trigger_angle_deg(cfg):
+    """觸發角 (度): PREDIVE_TRIGGER_ANGLE_DEG, 沒設 = 俯衝角 DIVE_ANGLE_DEG."""
+    a = getattr(cfg, 'PREDIVE_TRIGGER_ANGLE_DEG', None)
+    return float(cfg.DIVE_ANGLE_DEG if a is None else a)
 
 
 def camera_yaw(pkt, ac_yaw, cfg):
@@ -117,6 +137,10 @@ VG_CSV_FIELDS = [
     #   相機朝機頭時 vg_yaw_diff_deg 應該 ≈ 固定值 (磁北/真北差 + 安裝偏差), 抖動小
     #   才考慮改 GIMBAL_YAW_MODE='earth'.
     'vg_ac_yaw_deg', 'vg_gimbal_yaw_deg', 'vg_yaw_diff_deg',
+    # 推頭判斷 (2026/11/11): 用哪一種 / 觸發角 / 實際餵給狀態機的值
+    'vg_trigger',        # angle = 看車俯角 ≥ 觸發角; distance = 偵測水平距 ≤ 門檻
+    'vg_trigger_angle_deg',
+    'vg_predive_in_m',   # 餵給狀態機的 predive_dist_m (angle 模式 = 等效距離)
 ]
 
 
@@ -124,10 +148,27 @@ class VisionSource:
     """虛擬目標 (virtual_source.VirtualSource) 的替代品: 目標來自對方雲台偵測.
     每個控制拍呼叫 get_fields(); 只在 result_id 改變時處理新的一筆."""
 
-    def __init__(self, cfg, ctrl):
+    def __init__(self, cfg, ctrl, predive_dist_m=None):
         self.cfg = cfg
         self.ctrl = ctrl
+        # 狀態機的推頭門檻 (= gcfg.PREDIVE_DIST_M); angle 模式換算等效距離用
+        self.predive_dist_m = float(predive_dist_m if predive_dist_m is not None
+                                    else cfg.PREDIVE_DIST_M)
+        self.trigger = predive_trigger(cfg)
+        self.trigger_angle_deg = predive_trigger_angle_deg(cfg)
         self.reset()
+
+    def predive_input(self, m):
+        """一筆量測 → 餵給狀態機的 predive_dist_m.
+        angle:    等效距離, ≤ 門檻 ⇔ 看車俯角 ≥ 觸發角 (不用高度)
+        distance: 偵測水平距 (原本做法)"""
+        if self.trigger == 'distance':
+            return m['ground_m']
+        dep = m['depress_deg']
+        if dep <= 0.0:
+            return None
+        return (self.predive_dist_m * math.tan(math.radians(self.trigger_angle_deg))
+                / math.tan(math.radians(dep)))
 
     def reset(self):
         """新的一趟任務: 忘掉上一趟的目標."""
@@ -198,7 +239,7 @@ class VisionSource:
             'tgt_vn': 0.0, 'tgt_ve': 0.0,          # 車速未知 (前置瞄準本來就關)
             'slant_m': cur['slant_m'] if cur else None,
             'ground_m': cur['ground_m'] if cur else None,
-            'predive_dist_m': cur['ground_m'] if cur else None,
+            'predive_dist_m': self.predive_input(cur) if cur else None,
             'bbox_detected': det,
             'bbox_u': cur['comp_u'] if det else None,
             'bbox_v': cur['comp_v'] if det else None,
@@ -211,7 +252,9 @@ class VisionSource:
             return round(x, nd) if _finite(x) else ''
 
         row = dict.fromkeys(VG_CSV_FIELDS, '')
-        row.update(vg_new=int(new), vg_valid=int(cur is not None), vg_reason=self._reason)
+        row.update(vg_new=int(new), vg_valid=int(cur is not None), vg_reason=self._reason,
+                   vg_trigger=self.trigger, vg_trigger_angle_deg=r(self.trigger_angle_deg),
+                   vg_predive_in_m=r(fields['predive_dist_m'], 1))
         if cur is not None:
             row.update(vg_time_src=cur['time_src'], vg_pose_method=cur['pose_method'],
                        vg_pose_gap_ms=r(cur['pose_gap_ms'], 1),

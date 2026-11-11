@@ -3,6 +3,8 @@
 > 跟 `hsu_realflight_true` 的 xwing_virtual **同一個場景、同一套飛法、同一組參數、
 > 同一個狀態機與判斷邏輯** (240 m / 30 m/s / 俯衝 30° / 140 m 拉平 / WP3 撥 GUIDED)。
 > **唯一的差別：狀態機的「目標」輸入，從虛擬軌跡換成對方雲台的目標偵測。**
+>
+> ★ 2026/11/11 (與老師討論後)：**推頭依據改成「看車的俯角 ≥ 30°」**，不再用水平距離 (見 §1.1)。
 
 ## 1. 一次看懂
 
@@ -12,7 +14,7 @@
 | 欄位 | 原本 (虛擬軌跡) | 現在 (目標偵測) | 狀態機拿來做什麼 (原邏輯) |
 |---|---|---|---|
 | `tgt_n`, `tgt_e` | 虛擬車位置 | 偵測算出的車地面位置 (看不到時保持最後一次) | SEARCH / PRE_DIVE 航向 = 飛機指向它 (43002) |
-| `predive_dist_m` | 到虛擬車水平距 | 偵測算出的水平距 (看不到 = 無) | ≤ 415.69 m 就推頭 |
+| `predive_dist_m` | 到虛擬車水平距 | **由看車俯角換算的等效距離** (看不到 = 無；見 §1.1) | ≤ 415.69 m 就推頭 ⇔ 俯角 ≥ 30° |
 | `tgt_valid` | 永遠有效 | 這拍看得到車 | PRE_DIVE / DIVE 看不到 > 1.5 s → ABORT |
 | `bbox_u`, `bbox_v`, `bbox_detected` | 虛擬車投影到機身相機 | 車在畫面的位置, 經雲台角度換到同一個機身相機 | DIVE PID 修 pitch / 方向舵；進 DIVE 要看得到 |
 
@@ -23,12 +25,48 @@
 ```
 AUTO 240 m / 30 m/s → WP3 撥 GUIDED
 → SEARCH:   飛控 43002 朝目標位置飛, TECS 定高定速
-→ 到目標水平距 ≤ 415.69 m (= 240 / tan30°) → PRE_DIVE: pitch −30°, 雲台送 '2' 鎖定 −30°
+→ 看車的俯角 ≥ 30° (11/11 起; 原本是水平距 ≤ 415.69 m) → PRE_DIVE: pitch −30°, 雲台送 '2' 鎖定 −30°
 → pitch 到 −27° 內且看得到目標 → DIVE: 目標畫面位置 PID
 → AGL ≤ 140 m 或空速 ≥ 60 m/s → PULLOUT → DONE (TECS 140 m / 30 m/s)
 PRE_DIVE / DIVE 看不到目標 > 1.5 s → ABORT 拉起 (原 ABORT_TARGET_LOST_S)
 ```
 SEARCH 段原本就沒有逾時：一直沒看到車就不會推頭，**由駕駛員切出 GUIDED**。
+
+### 1.1 推頭依據：看車的俯角 (2026/11/11)
+
+**看車的俯角 = 雲台往下的角度 + 車在畫面上下偏的角度** (每筆新辨識結果算一次)，
+**≥ 30° 就推頭**。這個角度只用到雲台角度與畫面，**不用飛機高度**。
+
+| | 角度判斷 (現在, `PREDIVE_TRIGGER='angle'`) | 距離判斷 (原本, `'distance'`) |
+|---|---|---|
+| 條件 | 看車俯角 ≥ 30° | 高度 ÷ tan(俯角) ≤ 415.69 m |
+| 用到高度 | 不用 | 用飛控相對起飛點高度 |
+| 實際高度 = 240 m | 同一個時間點 | 同一個時間點 |
+| 實際高度 ≠ 240 m | 推頭時視線仍是 30° | 視線偏離 30° (220 m → 28°；260 m → 32°) |
+| 目標區地面比起飛點高 / 低 | 30° | 也是 30° (高度與門檻的誤差互相抵銷)，只是 log 的距離數值會錯 |
+| 雲台俯角偏 1° | 推頭時機差 1° | 一樣差 1° |
+
+**狀態機沒改**：`dive_guidance.py` 仍然比「`predive_dist_m` ≤ 415.69 m」，
+`VisionSource` 改餵「等效距離」：
+
+> 等效距離 = 415.69 × tan(30°) ÷ tan(看車俯角)
+
+看車俯角 ≥ 30° 時等效距離 ≤ 415.69 m，所以結果就是「俯角 ≥ 30° 推頭」。
+因此狀態機自己印的「到目標水平距 XXXm ≤ 416m」在 angle 模式是**等效距離**；
+真正的看車俯角和水平距請看主程式的 MODE 橫幅 (`看車俯角=30.1° 偵測水平距=415m`) 與 CSV。
+
+- 切回原本：`--trigger distance`，或 config `PREDIVE_TRIGGER = 'distance'`
+- 改觸發角：`--trigger-angle 32`，或 `PREDIVE_TRIGGER_ANGLE_DEG` (預設 = 俯衝角 30°)
+- CSV：`vg_depress_deg` (看車俯角)、`vg_ground_m` (水平距)、`vg_trigger`、`vg_trigger_angle_deg`、`vg_predive_in_m` (餵給狀態機的值)
+- 比較兩種做法：`python3 xwing_vision_sim.py --trigger-compare --car stopped`
+
+| 情況 (模擬, 車停著) | 角度：推頭時真實視線 | 距離：推頭時真實視線 |
+|---|---|---|
+| 高度 240 m | 30.1° | 30.1° |
+| 高度 220 m | **30.2°** (377 m 推頭) | 28.0° (414 m 推頭) |
+| 高度 260 m | **30.2°** (446 m 推頭) | 32.2° (414 m 推頭) |
+| 目標區地面低 15 m | 30.2° | 30.2° |
+| 目標區地面高 15 m | 30.1° | 30.1° |
 
 ## 2. 對方雲台資料 (2026/11 確認)
 
@@ -87,13 +125,13 @@ SEARCH 段原本就沒有逾時：一直沒看到車就不會推頭，**由駕�
 | `uart_mipi_receiver.py` | 對方 11/09 新版 (未改) | 共用雲台接收端 V6 (新格式 0~5 / 10 + 舊 v6/v7/v8) |
 | `xwing_uart_vision.py` / `xwing_uart_sender_sim.py` | 從 B 複製，改成支援新格式 | 背景接收 (新增 `vis_gimbal_yaw`)、模擬發送端 (預設送 v10，`--yaw-deg`) |
 | `vision_sim_camera.py` / `xwing_vision_sim.py` | 新增 | 桌上閉迴路模擬 (真車 + 模擬對方雲台) |
-| `test_vision_guidance.py` | 新增 | 57 項測試 |
+| `test_vision_guidance.py` | 新增 | 71 項測試 |
 
 `dive_guidance.py`、`attitude_bridge.py`、`run_vision_flight.py` 等原檔**都沒有改**。
 
 ## 4. 新增的參數 (`xwing_vision_config.py`)
 
-只有「目標怎麼從偵測算出來」需要的值，沒有新增任何判斷條件：
+「目標怎麼從偵測算出來」需要的值，以及推頭依據的切換：
 
 | 參數 | 值 | 意思 |
 |---|---|---|
@@ -101,8 +139,11 @@ SEARCH 段原本就沒有逾時：一直沒看到車就不會推頭，**由駕�
 | `GIMBAL_PITCH_OFFSET_DEG` | 0 | ★ 地面校正：光軸實際俯角 − 回報值 |
 | `GIMBAL_YAW_OFFSET_DEG` | 0 | ★ 地面校正：光軸偏機頭右方幾度 |
 | `POSE_MAX_GAP_S` | 0.15 s | 查拍照那一刻的飛機姿態，前後樣本最遠差距 |
+| `PREDIVE_TRIGGER` | `'angle'` | ★ 推頭依據：`'angle'` 看車俯角 / `'distance'` 偵測水平距 (原本) |
+| `PREDIVE_TRIGGER_ANGLE_DEG` | None (= 30°) | angle 模式的觸發角 |
+| `GIMBAL_YAW_MODE` | `'none'` | 雲台 yaw 只記錄，不參與計算 |
 
-其他 (推頭 415.69 m、ABORT 1.5 s、啟動檢查、雲台模式鍵…) 全部 = B。
+其他 (ABORT 1.5 s、啟動檢查、雲台模式鍵…) 全部 = B。
 
 ## 5. 執行
 
@@ -110,12 +151,14 @@ SEARCH 段原本就沒有逾時：一直沒看到車就不會推頭，**由駕�
 roslaunch mavros apm.launch
 python3 xwing_vision_flight.py                    # 目標來自偵測 (預設)
 python3 xwing_vision_flight.py --vision-port /dev/ttyUSB0
+python3 xwing_vision_flight.py --trigger distance # 推頭依據改回偵測水平距 (原本)
 python3 xwing_vision_flight.py --virtual-control  # 目標來自虛擬軌跡 (= B, 偵測只記錄)
 python3 xwing_vision_flight.py --bench            # 掛機
 ```
 
 開機印 `目標來源: ★ 目標偵測`。每秒狀態列最後一段：
-`| VIS link=1 det=1 dist=452m gmode=1(req 1) gpitch=-27.9`
+`| VIS link=1 det=1 dep=27.9° dist=452m gmode=1(req 1) gpitch=-27.9`
+開機也會印 `推頭門檻: 看車俯角 ≥ 30.0° (不用高度)`。
 
 主 CSV：B 的欄位全部保留，另加 `control`、`abort_reason`、`vg_*`
 (這拍看不看得到、原因、方位、偏機頭、俯角、水平距、車的 NED / GPS 估計)、`gcomp_u/v`。
@@ -123,7 +166,7 @@ python3 xwing_vision_flight.py --bench            # 掛機
 ## 6. 測試結果 (桌上)
 
 ```bash
-python3 test_vision_guidance.py     # → PASS (57 項)
+python3 test_vision_guidance.py     # → PASS (71 項)
 python3 xwing_vision_sim.py --all   # 各情境總表
 ```
 
@@ -143,7 +186,8 @@ python3 xwing_vision_sim.py --all   # 各情境總表
 - 目標來自偵測時，**一律在真實 ~415 m 推頭**；虛擬軌跡遇到車慢 / 車沒開，推頭點就跑掉。
 - 虛擬軌跡模式的數字與 B 的 `xwing_virtual_sim.py` 相同 (−28.8°、80.0 m)。
 - ⚠ 移動的車 miss 約 50~80 m (打在車後)：原專案純追擊、沒有前置瞄準 (`MOVING_TARGET_LEAD = False`) 的特性，B 也一樣。
-- 雲台 pitch 偏 1° → 推頭點差約 17 m，**實飛前一定要校正 `GIMBAL_PITCH_OFFSET_DEG`**。
+- 雲台 pitch 偏 1° → 推頭點差約 17 m (角度判斷也一樣差 1°)，**實飛前一定要校正 `GIMBAL_PITCH_OFFSET_DEG`**。
+- 上表在 240 m 飛，角度判斷與距離判斷結果相同；高度不是 240 m 的比較見 §1.1。
 
 這些是模擬結果 (飛機模型同 B 的估算)；**實機、實際雲台都還沒測過**。
 

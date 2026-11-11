@@ -60,13 +60,16 @@ def _wrap(a):
 def simulate(cfg=None, vision=True, car_case='slow', guided_dist=613.0,
              dropout=0.0, detect_range=900.0, pitch_bias=0.0, yaw_bias=0.0,
              blackout=None, ld=8.0, q_max=20.0, n_max=2.5, dt=0.02,
-             t_after_done=6.0, seed=1, verbose=False):
+             t_after_done=6.0, seed=1, verbose=False, fly_agl=None, ground_dz=0.0):
+    """fly_agl: 實際巡航高度 (預設 = CRUISE_AGL_M); 程式的推頭門檻仍照 config 的 240 m 算.
+    ground_dz: 目標區地面比起飛點高多少 m (負 = 比較低); 飛控回報的高度是相對起飛點,
+    真正離目標地面的高度 = 回報高度 − ground_dz."""
     cfg = cfg or XwingVisionConfig()
     start = cfg.MOVING_START_GPS
     heading = target_heading_deg(cfg, start)
     gcfg = build_gcfg(cfg, True, cfg.PREDIVE_DIST_M)
     sm = MissionStateMachine(gcfg, verbose=verbose)
-    vsrc = VisionSource(cfg, control_camera(cfg, gcfg))
+    vsrc = VisionSource(cfg, control_camera(cfg, gcfg), predive_dist_m=gcfg.PREDIVE_DIST_M)
     target = build_target(cfg, True, start, start, heading, cfg.TARGET_SPEED_MPS, t0=0.0)
     with contextlib.redirect_stdout(io.StringIO()):
         virt = VirtualSource(cfg, gcfg, start[0], start[1], target)
@@ -81,7 +84,7 @@ def simulate(cfg=None, vision=True, car_case='slow', guided_dist=613.0,
     poses = AngleHistory(size=2000)
 
     n, e = -guided_dist * math.cos(hr), -guided_dist * math.sin(hr)
-    h = cfg.CRUISE_AGL_M
+    h = cfg.CRUISE_AGL_M if fly_agl is None else float(fly_agl)
     V = cfg.V_CRUISE_MPS
     chi = heading
     gam = 0.0
@@ -110,7 +113,7 @@ def simulate(cfg=None, vision=True, car_case='slow', guided_dist=613.0,
         gstate = gimbal_state_label(True, sm.mission_armed, sm.mode)
         cam.request_mode(cfg.GIMBAL_MODE_KEYS.get(gstate))
         cam.enabled = not (blackout and blackout[0] <= t < blackout[1])
-        ac = {'n': n, 'e': e, 'agl': h, 'yaw': chi}
+        ac = {'n': n, 'e': e, 'agl': h - ground_dz, 'yaw': chi}   # 相機看到的是真實地面
         cam.step(t, dt, ac, car)
         poses.append(t, (0.0, theta, chi, chi))
 
@@ -144,7 +147,11 @@ def simulate(cfg=None, vision=True, car_case='slow', guided_dist=613.0,
             if mode == 'PRE_DIVE':
                 res['predive'] = {'t': t, 'true': true_ground,
                                   'vis': vg['ground_m'],
-                                  'virt': vf['ground_m']}
+                                  'virt': vf['ground_m'],
+                                  'agl': h,
+                                  # 推頭那一刻, 飛機到真車的真實視線俯角
+                                  'los': math.degrees(math.atan2(h - ground_dz,
+                                                                 max(true_ground, 1e-3)))}
             elif mode == 'DIVE':
                 res['dive'] = {'t': t, 'true': true_ground}
             elif mode in ('ABORT', 'DONE') and out.get('abort_reason'):
@@ -156,7 +163,7 @@ def simulate(cfg=None, vision=True, car_case='slow', guided_dist=613.0,
         if sm.pullout_snapshot is not None and res['pullout'] is None:
             sp = sm.pullout_snapshot
             res['pullout'] = {'t': t, 'agl': sp['agl']}
-            i_n, i_e, tf = extrapolate_impact(sp['ac_n'], sp['ac_e'], sp['agl'],
+            i_n, i_e, tf = extrapolate_impact(sp['ac_n'], sp['ac_e'], sp['agl'] - ground_dz,
                                               sp['vn'], sp['ve'], sp['vd'])
             if i_n is not None:
                 res['miss_car'] = miss_distance(i_n, i_e, tf, car_n, car_e,
@@ -242,7 +249,7 @@ def print_report(r):
     if r['predive']:
         p = r['predive']
         print(f" 推頭: t={p['t']:.2f}s  真實水平距 {p['true']:.0f} m  偵測 {_f(p['vis'])} m  "
-              f"虛擬目標 {p['virt']:.0f} m")
+              f"虛擬目標 {p['virt']:.0f} m  ★ 真實視線俯角 {p['los']:.1f}° (AGL {p['agl']:.0f} m)")
     if r['dive_gamma'] is not None:
         print(f" DIVE 平均航跡角 {r['dive_gamma']:.1f}°  最高空速 {r['max_V']:.1f} m/s  "
               f"拉平後最低 {_f(r['min_agl'])} m")
@@ -267,6 +274,30 @@ def summary_row(name, r):
             f"{r['abort'] or ('沒有推頭' if r['predive'] is None else '')}")
 
 
+def trigger_compare(car_case='virtual'):
+    """同一台車, 推頭依據 angle / distance, 在不同實際高度 / 地形下比較."""
+    print(f"推頭依據比較 (車子情境 {car_case}; 程式門檻以 240 m / 30° 計算)")
+    print(f"{'情況':<26}{'依據':<10}{'推頭真距':>9}{'真實視線俯角':>13}"
+          f"{'DIVEγ':>8}{'真車miss':>9}")
+    cases = [('高度 240 m (標準)', dict()),
+             ('高度 220 m (低 20 m)', dict(fly_agl=220.0)),
+             ('高度 260 m (高 20 m)', dict(fly_agl=260.0)),
+             ('目標區地面低 15 m', dict(ground_dz=-15.0)),
+             ('目標區地面高 15 m', dict(ground_dz=15.0))]
+    rows = []
+    for name, kw in cases:
+        for trig in ('angle', 'distance'):
+            r = simulate(cfg=XwingVisionConfig(PREDIVE_TRIGGER=trig),
+                         car_case=car_case, **kw)
+            p = r['predive'] or {}
+            m = r['miss_car']['miss_total'] if r['miss_car'] else None
+            print(f"{name:<26}{trig:<10}{_f(p.get('true')):>9}"
+                  f"{_f(p.get('los'), '{:.1f}°'):>13}"
+                  f"{_f(r['dive_gamma'], '{:.1f}'):>8}{_f(m, '{:.1f}'):>9}")
+            rows.append((name, trig, r))
+    return rows
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--car', choices=sorted(CAR_CASES), default='slow')
@@ -284,12 +315,25 @@ def main():
                     help='這段時間資料鏈中斷 (秒, 相對切 GUIDED)')
     ap.add_argument('--seed', type=int, default=1)
     ap.add_argument('--verbose', action='store_true')
+    ap.add_argument('--trigger', choices=('angle', 'distance'), default=None,
+                    help='推頭依據 (預設 = config PREDIVE_TRIGGER)')
+    ap.add_argument('--fly-agl', type=float, default=None,
+                    help='實際巡航高度 m (門檻仍以 240 m 計算)')
+    ap.add_argument('--ground-dz', type=float, default=0.0,
+                    help='目標區地面比起飛點高幾 m (負 = 低)')
+    ap.add_argument('--trigger-compare', action='store_true',
+                    help='角度 vs 距離: 不同高度 / 地形下推頭時的真實視線俯角與 miss')
     args = ap.parse_args()
+    cfg = XwingVisionConfig(**({'PREDIVE_TRIGGER': args.trigger} if args.trigger else {}))
+    if args.trigger_compare:
+        trigger_compare(args.car)
+        return
     bo = tuple(float(x) for x in args.blackout.split(':')) if args.blackout else None
     kw = dict(guided_dist=args.guided_dist, dropout=args.dropout,
               detect_range=args.detect_range, pitch_bias=args.pitch_bias,
               yaw_bias=args.yaw_bias, blackout=bo, seed=args.seed,
-              verbose=args.verbose)
+              verbose=args.verbose, cfg=cfg, fly_agl=args.fly_agl,
+              ground_dz=args.ground_dz)
 
     if args.all:
         print(f"{'情境':<34}{'偵測s':>7}{'推頭真':>8}{'推頭偵':>8}{'DIVEγ':>8}"

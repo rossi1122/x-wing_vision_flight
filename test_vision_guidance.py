@@ -4,6 +4,7 @@
 test_vision_guidance.py — 目標偵測版測試 (不需要 ROS / 飛控 / 雲台)
 ═══════════════════════════════════════════════════════════════════
 1. 幾何: 方位、水平距、DIVE 畫面位置的正負號 (手算期望值, 不靠模擬器), 雲台 yaw 用法
+   推頭依據: 看車俯角 (angle, 預設) vs 偵測水平距 (distance)
 1b. UART 協定: 共用接收端 V6 新格式 (0~5 / 10, 含 yaw) 與舊 v6 / v7 / v8 都解得出來
 2. VisionSource: 偵測結果 → 與虛擬目標同名的欄位 (看得到 / 看不到 / 資料過期)
 3. 閉迴路模擬 (xwing_vision_sim): 各種車子情境的結果合理
@@ -210,6 +211,42 @@ def test_source():
     check(f['tgt_n'] is None and not f['tgt_valid'],
           "新的一趟: 忘掉上一趟的目標 (主程式改用虛擬目標帶路)")
 
+    # ── 推頭依據: 角度 (預設) vs 距離 ──
+    thr = gcfg.PREDIVE_DIST_M
+    check(cfg.PREDIVE_TRIGGER == 'angle', "預設推頭依據 = 看車俯角 (angle)")
+    src_d = VisionSource(XwingVisionConfig(PREDIVE_TRIGGER='distance'),
+                         control_camera(cfg, gcfg), predive_dist_m=thr)
+
+    def pd(s_, agl, ground, rid):
+        # 車在畫面正中央, 雲台往下的角度 = 剛好看到地面 ground m 外的車
+        dep = math.degrees(math.atan2(agl, ground))
+        s_.reset()
+        f_, row_ = s_.get_fields(pkt(rid, 960, 540, 10.2, pitch=-dep), 10.2, poses,
+                                 agl, 600.0, 0.0)
+        return f_['predive_dist_m'], row_, dep
+
+    a240, row, _ = pd(src, 240.0, 415.69, 10)
+    d240, _, _ = pd(src_d, 240.0, 415.69, 10)
+    check(abs(a240 - thr) < 0.5 and abs(d240 - thr) < 0.5,
+          "240 m、俯角 30°: 角度與距離都剛好到門檻 (兩者等價)")
+    check(row['vg_trigger'] == 'angle' and row['vg_trigger_angle_deg'] == 30.0
+          and abs(row['vg_predive_in_m'] - thr) < 0.5, "log 記錄推頭依據 / 觸發角 / 餵給狀態機的值")
+    a, _, dep = pd(src, 220.0, 400.0, 11)
+    d, _, _ = pd(src_d, 220.0, 400.0, 11)
+    check(a > thr and d <= thr,
+          f"220 m、車 400 m (俯角 {dep:.1f}° < 30°): 角度不推頭, 距離會推頭")
+    a, _, dep = pd(src, 260.0, 430.0, 12)
+    d, _, _ = pd(src_d, 260.0, 430.0, 12)
+    check(a <= thr and d > thr,
+          f"260 m、車 430 m (俯角 {dep:.1f}° > 30°): 角度推頭, 距離還不推頭")
+    src_35 = VisionSource(XwingVisionConfig(PREDIVE_TRIGGER_ANGLE_DEG=35.0),
+                          control_camera(cfg, gcfg), predive_dist_m=thr)
+    a, _, _ = pd(src_35, 240.0, 415.69, 13)
+    check(a > thr, "觸發角改 35°: 俯角 30° 時還不推頭")
+    a, _, _ = pd(src_35, 240.0, 240.0 / math.tan(math.radians(35.5)), 14)
+    check(a <= thr, "觸發角改 35°: 俯角 35.5° 推頭")
+    check(src.trigger_angle_deg == cfg.DIVE_ANGLE_DEG, "觸發角預設 = 俯衝角")
+
 
 # ══════════════════════════════════════════════════════════════════
 # 3. 閉迴路模擬
@@ -217,6 +254,24 @@ def test_source():
 def test_sim():
     print("[3] 閉迴路模擬")
     from xwing_vision_sim import simulate
+    from xwing_vision_config import XwingVisionConfig
+    # 推頭依據: 實際高度不是 240 m 時, 角度判斷仍在真實視線 30° 推頭
+    for agl in (220.0, 260.0):
+        ra = simulate(car_case='stopped', fly_agl=agl)
+        rd = simulate(cfg=XwingVisionConfig(PREDIVE_TRIGGER='distance'),
+                      car_case='stopped', fly_agl=agl)
+        la, ld_ = ra['predive']['los'], rd['predive']['los']
+        check(abs(la - 30.0) < 0.7 and abs(ld_ - 30.0) > 1.5,
+              f"實際高度 {agl:.0f} m: 角度判斷推頭時真實視線 {la:.1f}° ≈ 30°, "
+              f"距離判斷 {ld_:.1f}°")
+    # 目標區地面高低不同: 兩種判斷都在 30° (飛控高度 = 240, 誤差互相抵銷)
+    for dz in (-15.0, 15.0):
+        ra = simulate(car_case='stopped', ground_dz=dz)
+        rd = simulate(cfg=XwingVisionConfig(PREDIVE_TRIGGER='distance'),
+                      car_case='stopped', ground_dz=dz)
+        check(abs(ra['predive']['los'] - 30.0) < 0.7
+              and abs(ra['predive']['t'] - rd['predive']['t']) < 0.05,
+              f"地面差 {dz:+.0f} m: 角度 / 距離同時推頭 (真實視線 {ra['predive']['los']:.1f}°)")
     # 車照虛擬目標開: 幾何與虛擬控制相同 → miss 應該差不多 (純追擊無前置, 兩者都打在車後)
     r = simulate(vision=True, car_case='virtual')
     rvv = simulate(vision=False, car_case='virtual')
@@ -463,6 +518,11 @@ def test_flight():
           and float(pre['vg_ground_m']) <= 416.0,
           "CSV: 推頭那拍的偵測水平距 ≤ 415.69 m")
     check(all(r['control'] == 'vision' for r in rows), "CSV: control = vision")
+    check(pre is not None and pre['vg_trigger'] == 'angle' and pre['vg_depress_deg'] != ''
+          and float(pre['vg_depress_deg']) >= 29.9,
+          "CSV: 推頭那拍的依據 = angle, 看車俯角 ≥ 30°")
+    check('推頭: 看車俯角 ≥ 30.0°' in text and '看車俯角=' in text,
+          "events: 記錄推頭依據與切換時的看車俯角")
     diffs = [abs(float(r['vg_yaw_diff_deg'])) for r in rows if r.get('vg_yaw_diff_deg')]
     check(len(diffs) > 50 and max(diffs) < 1.0,
           f"CSV: 雲台 yaw (對地, 置中) 對照飛控航向 {len(diffs)} 筆, 最大差 "
