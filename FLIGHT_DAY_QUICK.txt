@@ -119,6 +119,7 @@ python3 xwing_vision_flight.py --case flight1 2>&1 | tee console_flight1.txt
 切 GUIDED 後要看到:
     切 GUIDED 時離目標起點 約 570 m        ← 出現「不啟動任務」= 位置/高度/方向不對
     SEARCH → PRE_DIVE → DIVE → PULLOUT → DONE
+    雲台: SEARCH '1' 追蹤 → PRE_DIVE/DIVE '2' 鎖定 −30° → 拉平中不動 → DONE '1' 回追蹤
     DONE 之後由飛手切出 GUIDED
 
 Terminal 2 可以打的鍵 (打完按 Enter):
@@ -145,7 +146,9 @@ Terminal 2 可以打的鍵 (打完按 Enter):
 ------------------------------------------------------------------
 # Terminal 2: 輸入 q 按 Enter (如果還沒結束)
 
-# 雲台還停在鎖定 → 讓它回追蹤 (收到第一筆資料就送 '1'), 看到 [模式已確認] 後按 q:
+# 最後一趟有飛到 DONE: 程式已經把雲台切回追蹤, 不用做.
+# 最後一趟是 ABORT 或沒到 DONE 就切出 GUIDED: 雲台可能還停在鎖定 → 讓它回追蹤
+#   (收到第一筆資料就送 '1'), 看到 [模式已確認] 後按 q:
 python3 uart_mipi_receiver.py --port /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0 --mode 1
 
 # 找 log:

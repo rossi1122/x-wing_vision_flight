@@ -603,7 +603,8 @@ def test_flight():
     text, rows = run_flight([(2.0, True)], case='vtest_full')
     for key in ('第 1 趟任務開始', '撥 GUIDED 時已偵測到目標', 'MODE: SEARCH → PRE_DIVE',
                 'MODE: PRE_DIVE → DIVE', 'MODE: DIVE → PULLOUT', 'MODE: PULLOUT → DONE',
-                '偵測到的目標位置', "雲台狀態 → PRE_DIVE: 模式鍵 '2'"):
+                '偵測到的目標位置', "雲台狀態 → PRE_DIVE: 模式鍵 '2'",
+                "雲台狀態 → PULLOUT: 模式鍵 不要求", "雲台狀態 → DONE: 模式鍵 '1'"):
         check(key in text, f"完整一趟: events 有「{key}」")
     pre = next((r for r in rows if r['mode'] == 'PRE_DIVE'), None)
     check(pre is not None and pre['vg_ground_m'] != ''

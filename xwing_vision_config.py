@@ -173,7 +173,12 @@ class XwingVisionConfig:
     VISION_UART_BAUD = 115200
     VISION_STALE_S = 2.0              # 這麼久沒收到有效封包 → events 記「資料鏈中斷」
 
-    # ── 依任務狀態送模式鍵 ('0' 手動 / '1' 追蹤 / '2' 鎖定 −30° 對地) — 同 xwing_virtual ──
+    # ── 依任務狀態送模式鍵 ('0' 手動 / '1' 追蹤 / '2' 鎖定 −30° 對地) ──
+    #   None = 不要求 (不送鍵, 雲台維持原本的模式)
+    #   ★ 2026/11/12: DONE 改送 '1' — 完全拉平 (PULLOUT 結束、交給 TECS 平飛) 後回到追蹤,
+    #     拉平後還能繼續記錄看車的資料, 落地後也不用再手動把雲台切回追蹤.
+    #     (B = xwing_virtual 的 DONE 是 None, 拉平後一直停在鎖定 −30°)
+    #     PULLOUT (強制 pitch 0° 那 0.5 s) 維持 None, 拉平過程中相機不動.
     GIMBAL_MODE_CMD_ENABLED = True
     GIMBAL_MODE_KEYS = {
         'STANDBY':  None,
@@ -181,7 +186,7 @@ class XwingVisionConfig:
         'PRE_DIVE': '2',
         'DIVE':     '2',
         'PULLOUT':  None,
-        'DONE':     None,
+        'DONE':     '1',
         'ABORT':    None,
     }
     GIMBAL_MODE_RESEND_S = 1.0

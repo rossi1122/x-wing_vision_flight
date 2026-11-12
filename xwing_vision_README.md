@@ -156,7 +156,9 @@ SEARCH 段原本就沒有逾時：一直沒看到車就不會推頭，**由駕�
 | `PREDIVE_TRIGGER_ANGLE_DEG` | None (= 30°) | angle 模式的觸發角 |
 | `GIMBAL_YAW_MODE` | `'none'` | 雲台 yaw 只記錄，不參與計算 |
 
-其他 (ABORT 1.5 s、啟動檢查、雲台模式鍵…) 全部 = B。
+| `GIMBAL_MODE_KEYS['DONE']` | `'1'` | ★ 完全拉平 (DONE) 後雲台回追蹤 (B 是 None = 停在鎖定 −30°)；PULLOUT、ABORT 仍不送 |
+
+其他 (ABORT 1.5 s、啟動檢查、其他階段的雲台模式鍵…) 全部 = B。
 
 ## 5. 執行
 
