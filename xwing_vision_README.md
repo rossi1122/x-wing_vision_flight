@@ -132,7 +132,8 @@ SEARCH 段原本就沒有逾時：一直沒看到車就不會推頭，**由駕�
 | `uart_mipi_receiver.py` | 對方 11/09 新版 (未改) | 共用雲台接收端 V6 (新格式 0~5 / 10 + 舊 v6/v7/v8) |
 | `xwing_uart_vision.py` / `xwing_uart_sender_sim.py` | 從 B 複製，改成支援新格式 | 背景接收 (新增 `vis_gimbal_yaw`)、模擬發送端 (預設送 v10，`--yaw-deg`) |
 | `vision_sim_camera.py` / `xwing_vision_sim.py` | 新增 | 桌上閉迴路模擬 (真車 + 模擬對方雲台) |
-| `test_vision_guidance.py` | 新增 | 71 項測試 |
+| `test_vision_guidance.py` | 新增 | 86 項測試 |
+| `gimbal_calib.py` | 新增 | 地面校正雲台俯角 / 方位，印出 config 建議值 |
 
 | `FLIGHT_DAY_QUICK.txt` | 新增 | ★ 飛測日照順序操作的指令與檢查 |
 | `xwing_vision_mission_S2N_20261110.waypoints` | = B | 11/10 由南往北任務航點 (Mission Planner 載入) |
@@ -147,6 +148,7 @@ SEARCH 段原本就沒有逾時：一直沒看到車就不會推頭，**由駕�
 | 參數 | 值 | 意思 |
 |---|---|---|
 | `VISION_PKT_MAX_AGE_S` | 0.3 s | 最新封包超過這麼久沒更新 → 這拍算看不到 (資料鏈斷) |
+| `VISION_GROUND_AGL_M` | 20 m | 飛控高度低於此 = 地面 / 掛機：偵測照算角度，距離與位置要有高度才算 |
 | `GIMBAL_PITCH_OFFSET_DEG` | 0 | ★ 地面校正：光軸實際俯角 − 回報值 |
 | `GIMBAL_YAW_OFFSET_DEG` | 0 | ★ 地面校正：光軸偏機頭右方幾度 |
 | `POSE_MAX_GAP_S` | 0.15 s | 查拍照那一刻的飛機姿態，前後樣本最遠差距 |
@@ -177,7 +179,7 @@ python3 xwing_vision_flight.py --bench            # 掛機
 ## 6. 測試結果 (桌上)
 
 ```bash
-python3 test_vision_guidance.py     # → PASS (71 項)
+python3 test_vision_guidance.py     # → PASS (86 項)
 python3 xwing_vision_sim.py --all   # 各情境總表
 ```
 
@@ -205,7 +207,12 @@ python3 xwing_vision_sim.py --all   # 各情境總表
 ## 7. 上機前要做的
 
 1. 相機彈射後不失焦 (對方處理)。
-2. 地面校正：飛機水平、車放正前方已知距離 D，追蹤模式讓車置中，比較 log 的
-   `vg_ground_m` 與 D，調 `GIMBAL_PITCH_OFFSET_DEG`；看 `vg_bearing_off_deg` 是否 ≈ 0，調 `GIMBAL_YAW_OFFSET_DEG`。
+2. 地面校正 (`gimbal_calib.py`，只接雲台 UART，不用 ROS)：飛機放水平，標記放在機頭正前方的延長線上，
+   ```bash
+   python3 gimbal_calib.py                              # 標記跟鏡頭等高 (真實俯角 0°)
+   python3 gimbal_calib.py --distance 40 --height 1.2   # 標記在地上: 距離 40 m、比鏡頭低 1.2 m
+   ```
+   程式印出 `GIMBAL_PITCH_OFFSET_DEG` / `GIMBAL_YAW_OFFSET_DEG` 建議值，改完 config 再跑一次確認偏差 ≈ 0。
+   (2026/11/12 起飛控高度 < 20 m 時偵測照樣有效、只有角度；以前地面上偵測一律無效，沒辦法這樣校正。)
 3. 掛機整合：`python3 xwing_vision_flight.py --bench`，接對方雲台。
 4. 第一次實飛建議先 `--virtual-control` (= B)，同時記錄偵測欄位，飛完跟車子 GPS 比對再切換。

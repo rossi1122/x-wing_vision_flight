@@ -161,6 +161,9 @@ class XwingVisionConfig:
     GIMBAL_YAW_MODE = 'none'
     GIMBAL_YAW_SIGN = 1.0
     POSE_MAX_GAP_S = 0.15             # 取像時刻找飛機姿態, 前後樣本最遠差距
+    # 地面 / 掛機 (2026/11/12): 飛控高度低於此值 → 偵測的角度照算 (地面校正、掛機測推頭用);
+    #   距離 / 目標位置要用高度, 高度 ≤ 0.5 m 時留空. 空中 (≥ 此值) 行為不變.
+    VISION_GROUND_AGL_M = 20.0        # = ARM_GROUND_AGL_M (啟動檢查也用 20 m 判斷在地面)
 
     # ════════════════════════════════════════════════════════════
     #  雲台視覺 UART (= xwing_virtual_config; 協定見 uart_mipi_receiver.py: 共用接收端 V6, 新格式 0~5 / 10, 也收舊 v6 / v7 / v8)

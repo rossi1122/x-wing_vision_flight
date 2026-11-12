@@ -34,6 +34,13 @@ cd xwing_plot && python3 test_plot_report.py --vision && cd ..
 # 確認虛擬軌跡 = 新航線 (要看到 23.7287278 和 23.7298417):
 grep -n "MOVING_START_GPS\|MOVING_HEADING_GPS" xwing_vision_config.py
 
+# (鏡頭修好後, 正式模式飛之前做一次) 地面校正雲台角度 — 只接雲台, 不用 ROS:
+#   飛機放水平, 標記放機頭正前方的延長線上
+python3 gimbal_calib.py                              # 標記跟鏡頭等高
+python3 gimbal_calib.py --distance 40 --height 1.2   # 標記在地上 (距離 40 m, 比鏡頭低 1.2 m)
+#   照印出的建議值改 xwing_vision_config.py 的 GIMBAL_PITCH_OFFSET_DEG / GIMBAL_YAW_OFFSET_DEG,
+#   再跑一次確認「量到 − 真實」≈ 0. 偏差 > 5° 通常是擺錯, 不要照填.
+
 # 任務航點檔 (Mission Planner 載入, 跟虛擬軌跡配套):
     xwing_vision_mission_S2N_20261110.waypoints   (= B 的 xwing_virtual_mission_S2N_20261110.waypoints)
     WP2 轉彎點 (左轉往北) → 401 m → WP3 23.7235958, 120.3798693 (撥 GUIDED)

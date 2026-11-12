@@ -5,6 +5,8 @@ test_vision_guidance.py — 目標偵測版測試 (不需要 ROS / 飛控 / 雲�
 ═══════════════════════════════════════════════════════════════════
 1. 幾何: 方位、水平距、DIVE 畫面位置的正負號 (手算期望值, 不靠模擬器), 雲台 yaw 用法
    推頭依據: 看車俯角 (angle, 預設) vs 偵測水平距 (distance)
+   地面 / 掛機: 高度 ~0 時角度照算 (2026/11/12)
+1c. 地面校正 gimbal_calib.py: 建議的雲台 offset 正負號正確
 1b. UART 協定: 共用接收端 V6 新格式 (0~5 / 10, 含 yaw) 與舊 v6 / v7 / v8 都解得出來
 2. VisionSource: 偵測結果 → 與虛擬目標同名的欄位 (看得到 / 看不到 / 資料過期)
 3. 閉迴路模擬 (xwing_vision_sim): 各種車子情境的結果合理
@@ -79,6 +81,20 @@ def test_geometry():
     # 射線朝上 → 無效
     check(measure(pkt(960, 0, 20.0), (0.0, 0.0, 180.0, 180.0), 240.0, cfg, ctrl) is None,
           "射線朝上 → 無效")
+    # 地面 (2026/11/12): 高度 ~0 也照算角度, 距離 / 位置留空
+    check(measure(pkt(960, 540, -30.0), (0.0, 0.0, 180.0, 180.0), 0.2, cfg, ctrl) is None,
+          "空中模式 (ground=False) 高度 0.2 m → 無效 (原本行為不變)")
+    mg = measure(pkt(960, 540, -30.0), (0.0, 0.0, 180.0, 180.0), 0.2, cfg, ctrl, ground=True)
+    check(mg is not None and abs(mg['depress_deg'] - 30.0) < 0.01 and mg['ground_m'] is None
+          and mg['geom'] == 'angle' and mg['comp_u'] is not None,
+          "地面: 俯角 30° 照算, 水平距 / 位置留空, DIVE 畫面位置有值")
+    m0 = measure(pkt(960 + 50, 540, 0.0), (0.0, 0.0, 90.0, 90.0), 0.0, cfg, ctrl, ground=True)
+    check(m0 is not None and abs(m0['depress_deg']) < 0.01
+          and abs(m0['bearing_off_deg'] - math.degrees(math.atan(0.05))) < 0.01,
+          f"地面平視 (俯角 0°) 也算: 偏機頭 {m0['bearing_off_deg']:+.2f}° (校正方位用)")
+    mup = measure(pkt(960, 540, 5.0), (0.0, 0.0, 90.0, 90.0), 0.0, cfg, ctrl, ground=True)
+    check(mup is not None and abs(mup['depress_deg'] + 5.0) < 0.01,
+          "地面往上看 5° → 俯角 −5° (不再當成無效)")
     # 共用接收端 V6 的雲台 yaw (GIMBAL_YAW_MODE)
     py = dict(pkt(960, 540, -30.0), yaw=20.0)
     m_n = measure(py, (0.0, 0.0, 180.0, 180.0), 240.0, cfg, ctrl)
@@ -147,6 +163,40 @@ def test_uart_protocol():
     n0 = link.stats['crc']
     link._buf.extend(bytes(bad))
     check(link._extract() is None and link.stats['crc'] > n0, "CRC 錯 → 丟棄")
+
+
+# ══════════════════════════════════════════════════════════════════
+# 1c. 地面校正 (gimbal_calib.py)
+# ══════════════════════════════════════════════════════════════════
+def test_calib():
+    print("[1c] 地面校正 gimbal_calib")
+    from xwing_vision_config import XwingVisionConfig
+    from xwing_vision_common import build_gcfg, control_camera
+    from vision_guidance import measure
+    from gimbal_calib import estimate
+
+    def run(cfg, rep_pitch, u, v):
+        ctrl = control_camera(cfg, build_gcfg(cfg, True, cfg.PREDIVE_DIST_M))
+        pk = {'target_cx': u, 'target_cy': v, 'fx': 1000.0, 'fy': 1000.0,
+              'cx': 960.0, 'cy': 540.0, 'pitch': rep_pitch, 'roll': 0.0}
+        m = measure(pk, (0.0, 0.0, 0.0, 0.0), None, cfg, ctrl, ground=True)
+        return estimate([m['depress_deg']], [m['bearing_off_deg']], 0.0 if rep_pitch > -5 else 30.0,
+                        0.0, cfg.GIMBAL_PITCH_OFFSET_DEG, cfg.GIMBAL_YAW_OFFSET_DEG)
+
+    cfg = XwingVisionConfig()
+    # 俯角: 光軸實際 −30°, 雲台回報 −29°, 標記在真實俯角 30° (畫面正中央)
+    r = run(cfg, -29.0, 960.0, 540.0)
+    check(abs(r['new_pitch_off'] + 1.0) < 0.01,
+          f"回報 −29° 實際 −30° → 建議 GIMBAL_PITCH_OFFSET_DEG = {r['new_pitch_off']:.2f} (應 −1)")
+    r2 = run(XwingVisionConfig(GIMBAL_PITCH_OFFSET_DEG=r['new_pitch_off']), -29.0, 960.0, 540.0)
+    check(abs(r2['pitch_err']) < 0.01, "改成建議值再量: 俯角偏差 ≈ 0")
+    # 方位: 光軸偏機頭右 2°, 標記在機頭正前方 (等高) → 畫面上偏左 2°
+    u = 960.0 - 1000.0 * math.tan(math.radians(2.0))
+    r = run(cfg, 0.0, u, 540.0)
+    check(abs(r['new_yaw_off'] - 2.0) < 0.01,
+          f"光軸偏右 2° → 建議 GIMBAL_YAW_OFFSET_DEG = {r['new_yaw_off']:.2f} (應 +2)")
+    r2 = run(XwingVisionConfig(GIMBAL_YAW_OFFSET_DEG=r['new_yaw_off']), 0.0, u, 540.0)
+    check(abs(r2['yaw_err']) < 0.01, "改成建議值再量: 方位偏差 ≈ 0")
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -247,6 +297,26 @@ def test_source():
     check(a <= thr, "觸發角改 35°: 俯角 35.5° 推頭")
     check(src.trigger_angle_deg == cfg.DIVE_ANGLE_DEG, "觸發角預設 = 俯衝角")
 
+    # ── 地面 / 掛機: 高度 ~0 時偵測照樣有效 (角度), 角度判斷能推頭 ──
+    src.reset()
+    f, row = src.get_fields(pkt(20, 960, 540, 10.2, pitch=-31.0), 10.2, poses, 0.2, 0.0, 0.0)
+    check(f['tgt_valid'] and f['predive_dist_m'] is not None and f['predive_dist_m'] <= thr
+          and row['vg_ground'] == 1 and row['vg_geom'] == 'angle',
+          "地面高度 0.2 m、俯角 31°: 看得到, 角度判斷達到推頭條件")
+    check(f['tgt_n'] is None and f['ground_m'] is None and row['vg_ground_m'] == '',
+          "地面: 沒有距離 / 目標位置 (航向用虛擬目標帶路)")
+    f, _ = src_d.get_fields(pkt(21, 960, 540, 10.2, pitch=-31.0), 10.2, poses, 0.2, 0.0, 0.0)
+    check(f['tgt_valid'] and f['predive_dist_m'] is None,
+          "地面 + 距離判斷: 看得到但沒有距離 → 不推頭")
+    src.reset()
+    f, row = src.get_fields(pkt(22, 960, 540, 10.2, pitch=-31.0), 10.2, poses, 5.0, 0.0, 0.0)
+    check(f['tgt_valid'] and row['vg_geom'] == 'full' and row['vg_ground'] == 1,
+          "地面但氣壓高度 5 m: 角度 + 距離都算 (距離僅供參考)")
+    src.reset()
+    f, row = src.get_fields(pkt(23, 960, 0, 10.2, pitch=20.0), 10.2, poses, 240.0, 0.0, 0.0)
+    check(not f['tgt_valid'] and row['vg_reason'] == 'ray_up' and row['vg_ground'] == 0,
+          "空中 240 m 射線朝上 → 照舊判無效 (ray_up)")
+
 
 # ══════════════════════════════════════════════════════════════════
 # 3. 閉迴路模擬
@@ -308,7 +378,10 @@ def test_sim():
 # ══════════════════════════════════════════════════════════════════
 # 4. 實飛主程式 (假 ROS)
 # ══════════════════════════════════════════════════════════════════
-def run_flight(script, car_present=True, link_ok_from=0.0, case='vtest', stop_at=60.0):
+def run_flight(script, car_present=True, link_ok_from=0.0, case='vtest', stop_at=60.0,
+               bench=False):
+    """bench=True: 飛機放在地上 (高度 0.3 m, 不動) + --bench --bench-dive;
+    假雲台看著正前方的標記, 每秒往下多看 1° (20° → 40°)."""
     """跑一次 xwing_vision_flight.main(). script = [(t_rel, guided), ...]."""
     import importlib
     import time as _time
@@ -361,6 +434,8 @@ def run_flight(script, car_present=True, link_ok_from=0.0, case='vtest', stop_at
                 S0[1] + math.degrees(e / (R * math.cos(math.radians(S0[0])))))
 
     AC = {'n': 613.0, 'e': 0.0, 'h': 240.0, 'V': 30.0, 'pitch': 0.0, 'chi': 180.0}
+    if bench:
+        AC.update(n=0.0, e=0.0, h=0.3, V=0.0)
     BR = {'out': None}
     t_guided = next((tr for tr, g in script if g), 0.0)
     car = SimCar(0.0, 0.0, 180.0, t_start=t_guided, vmax=10.0, present=car_present)
@@ -377,6 +452,11 @@ def run_flight(script, car_present=True, link_ok_from=0.0, case='vtest', stop_at
     def step():
         clk['t'] += DT
         trel = clk['t'] - T0
+        if bench:                      # 地上不動, 只記姿態
+            poses.append(clk['t'], (0.0, 0.0, AC['chi'] % 360, AC['chi'] % 360))
+            if trel > stop_at:
+                stop['v'] = True
+            return
         out = BR['out']
         g = guided_now()
         active = g and out and out.get('cmd_active')
@@ -460,6 +540,18 @@ def run_flight(script, car_present=True, link_ok_from=0.0, case='vtest', stop_at
             pass
 
         def latest(self):
+            if bench:                  # 地面標記: 畫面正中央, 雲台俯角 20° 起每秒 +1°
+                trel = clk['t'] - T0
+                return {'target_cx': 960.0, 'target_cy': 540.0,
+                        'offset_x': 0.0, 'offset_y': 0.0,
+                        'fx': 1000.0, 'fy': 1000.0, 'cx': 960.0, 'cy': 540.0,
+                        'image_width': 1920.0, 'image_height': 1080.0,
+                        'pitch': -min(40.0, 20.0 + trel), 'roll': 0.0, 'yaw': AC['chi'],
+                        'mode': int(self._req) if self._req else 0,
+                        'result_id': int(trel * 30), 'detection_age_ms': 30.0,
+                        'angle_age_ms': 5.0, 'laser_distance_m': float('nan'), 'ver': 10,
+                        'cap_mono': clk['t'] - 0.04, 'rx_mono': clk['t'] - 0.01,
+                        'e2e_ms': 30.0, 'e2e_err_ms': 1.0, 'valid': True}
             # 時鐘: 模擬相機用相對時間, 封包時間換回假時鐘的 monotonic
             p = cam.latest()
             if p is None:
@@ -492,7 +584,7 @@ def run_flight(script, car_present=True, link_ok_from=0.0, case='vtest', stop_at
     F.keyboard_thread = lambda flags: None
     xwing_uart_vision.UartVisionLink = FakeLink
 
-    sys.argv = ['x', '--case', case]
+    sys.argv = ['x', '--case', case] + (['--bench', '--bench-dive'] if bench else [])
     try:
         F.main()
     finally:
@@ -528,6 +620,17 @@ def test_flight():
           f"CSV: 雲台 yaw (對地, 置中) 對照飛控航向 {len(diffs)} 筆, 最大差 "
           f"{max(diffs) if diffs else float('nan'):.2f}° (模擬兩者一致)")
 
+    # 掛機 (2026/11/12): 飛機在地上, 偵測照樣有效 → 俯角到 30° 推頭
+    text, rows = run_flight([(2.0, True)], case='vtest_bench', stop_at=20.0, bench=True)
+    # --bench-dive: PRE_DIVE 同一拍就交棒 DIVE, 所以找第一筆離開 SEARCH 的
+    pre = next((r for r in rows if r['mode'] in ('PRE_DIVE', 'DIVE')), None)
+    check(pre is not None and ('MODE: SEARCH → PRE_DIVE' in text or 'MODE: SEARCH → DIVE' in text)
+          and 29.9 <= float(pre['vg_depress_deg']) <= 31.0,
+          f"掛機 (高度 0.3 m): 俯角 {pre['vg_depress_deg'] if pre else '?'}° 推頭 (地面偵測有效)")
+    srch = [r for r in rows if r['mode'] == 'SEARCH' and r['guided'] in ('1', 'True')]
+    check(srch and all(r['vg_valid'] == '1' and r['vg_geom'] == 'angle' for r in srch[5:]),
+          "掛機: SEARCH 每拍都看得到 (vg_geom = angle)")
+
     text, rows = run_flight([(2.0, True)], car_present=False, case='vtest_nocar',
                             stop_at=30.0)
     after = text.split('第 1 趟任務開始')[1]
@@ -538,6 +641,7 @@ def test_flight():
 def main():
     test_geometry()
     test_uart_protocol()
+    test_calib()
     test_source()
     test_sim()
     test_flight()

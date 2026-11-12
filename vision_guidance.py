@@ -87,10 +87,15 @@ def camera_yaw(pkt, ac_yaw, cfg):
     raise ValueError(f"GIMBAL_YAW_MODE 只能是 'none' / 'body' / 'earth', 收到 {mode!r}")
 
 
-def measure(pkt, pose_angles, agl, cfg, ctrl):
-    """一筆有目標的封包 → 幾何量 dict; 射線沒朝下就回 None.
+def measure(pkt, pose_angles, agl, cfg, ctrl, ground=False):
+    """一筆有目標的封包 → 幾何量 dict.
     pose_angles = (roll, pitch, yaw, course) 取像時刻的飛機姿態 (度).
-    ctrl = (FX, FY, CX, CY, tilt_deg) 控制 (虛擬) 相機."""
+    ctrl = (FX, FY, CX, CY, tilt_deg) 控制 (虛擬) 相機.
+
+    空中 (ground=False): 射線沒朝下 / 沒有高度 → None (原本行為, 不變).
+    地面 (ground=True, 2026/11/12): 角度 (方位、偏機頭、俯角、DIVE 畫面位置) 一律算;
+        水平距 / 斜距 / 目標位置要用高度, 高度 ≤ 0.5 m 或射線沒朝下時留 None
+        (geom='angle'). 這樣地面校正、掛機測試都看得到偵測, 角度判斷也能測到推頭."""
     fx, fy, cx, cy = pkt['fx'], pkt['fy'], pkt['cx'], pkt['cy']
     ray_cam = np.array([(pkt['target_cx'] - cx) / fx,
                         (pkt['target_cy'] - cy) / fy, 1.0])
@@ -99,18 +104,23 @@ def measure(pkt, pose_angles, agl, cfg, ctrl):
     r = cfg.GIMBAL_ROLL_SIGN * pkt['roll'] + cfg.GIMBAL_ROLL_OFFSET_DEG
     cam_yaw = camera_yaw(pkt, ac_yaw, cfg)
     ray = camera_from_ned(p, r, cam_yaw).T @ ray_cam
+    if not np.isfinite(ray).all():
+        return None
     n, e, d = ray / np.linalg.norm(ray)
     horiz = math.hypot(n, e)
-    if d <= 1e-3 or agl is None or agl <= 0.5:
+    dist_ok = d > 1e-3 and agl is not None and agl > 0.5
+    if not dist_ok and not ground:
         return None
     bearing = math.degrees(math.atan2(e, n)) % 360.0
     out = {
         'bearing_deg': bearing,
         'bearing_off_deg': wrap_deg(bearing - ac_yaw),
-        'depress_deg': math.degrees(math.atan2(d, horiz)),
-        'ground_m': agl * horiz / d,
-        'slant_m': agl / d,
-        'rel_n': agl * n / d, 'rel_e': agl * e / d,
+        'depress_deg': math.degrees(math.atan2(d, horiz)),   # 地面可能 ≤ 0 (平視 / 往上看)
+        'ground_m': agl * horiz / d if dist_ok else None,
+        'slant_m': agl / d if dist_ok else None,
+        'rel_n': agl * n / d if dist_ok else None,
+        'rel_e': agl * e / d if dist_ok else None,
+        'geom': 'full' if dist_ok else 'angle',
         'comp_u': None, 'comp_v': None,
     }
     # DIVE: 換到「機身 pitch + 地速方向」的控制相機 (同 gimbal_pid_compensation.transform_pixel),
@@ -127,6 +137,8 @@ VG_CSV_FIELDS = [
     'vg_new',            # 1 = 這拍拿到新的辨識結果
     'vg_valid',          # 1 = 這拍看得到目標 (= 餵給狀態機的 tgt_valid)
     'vg_reason',         # 看不到的原因 (no_target / no_pose / ray_up / stale / no_data)
+    'vg_ground',         # 1 = 地面模式 (飛控高度 < VISION_GROUND_AGL_M): 角度照算
+    'vg_geom',           # full = 角度 + 距離 + 位置; angle = 只有角度 (地面, 沒有高度可用)
     'vg_time_src',       # 取像時刻來源: capture (v7/v8 校時) / rx (沒校時, 用收到時刻)
     'vg_pose_method', 'vg_pose_gap_ms',
     'vg_bearing_deg', 'vg_bearing_off_deg', 'vg_depress_deg',
@@ -182,6 +194,11 @@ class VisionSource:
     def last_valid(self):
         return self._last
 
+    def on_ground(self, agl):
+        """飛控高度 < VISION_GROUND_AGL_M (預設 20 m, 同 ARM_GROUND_AGL_M) = 在地面 / 掛機."""
+        lim = getattr(self.cfg, 'VISION_GROUND_AGL_M', 20.0)
+        return agl is None or agl < lim
+
     def _process(self, pkt, pose_history, agl):
         """一筆新結果 → 幾何量 dict, 或看不到的原因字串."""
         cfg = self.cfg
@@ -200,7 +217,7 @@ class VisionSource:
             return 'no_target'
         if pose is None:
             return 'no_pose'
-        m = measure(pkt, pose['angles'], agl, cfg, self.ctrl)
+        m = measure(pkt, pose['angles'], agl, cfg, self.ctrl, ground=self.on_ground(agl))
         if m is None:
             return 'ray_up'
         m.update(tcap=tcap, time_src=src, pose_method=pose['method'],
@@ -222,10 +239,15 @@ class VisionSource:
             self._last_rid = pkt['result_id']
             m = self._process(pkt, pose_history, agl)
             if isinstance(m, dict):
-                # 目標地面位置 (NED): 收到這筆時的飛機位置 + 射線落地點
-                m['tgt_n'], m['tgt_e'] = ac_n + m['rel_n'], ac_e + m['rel_e']
-                self._cur = self._last = m
+                self._cur = m
                 self._reason = ''
+                if m['rel_n'] is not None:
+                    # 目標地面位置 (NED): 收到這筆時的飛機位置 + 射線落地點
+                    m['tgt_n'], m['tgt_e'] = ac_n + m['rel_n'], ac_e + m['rel_e']
+                    self._last = m
+                else:
+                    # 地面只有角度: 沒有位置, 航向用的目標位置保持上一次 (沒有就虛擬目標帶路)
+                    m['tgt_n'] = m['tgt_e'] = None
             else:
                 self._cur, self._reason = None, m
 
@@ -253,6 +275,8 @@ class VisionSource:
 
         row = dict.fromkeys(VG_CSV_FIELDS, '')
         row.update(vg_new=int(new), vg_valid=int(cur is not None), vg_reason=self._reason,
+                   vg_ground=int(self.on_ground(agl)),
+                   vg_geom=cur['geom'] if cur is not None else '',
                    vg_trigger=self.trigger, vg_trigger_angle_deg=r(self.trigger_angle_deg),
                    vg_predive_in_m=r(fields['predive_dist_m'], 1))
         if cur is not None:
