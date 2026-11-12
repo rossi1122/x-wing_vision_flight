@@ -1,0 +1,193 @@
+==================================================================
+ xwing_vision 飛測日 快速操作導引 (照順序做)
+ 更新: 2026/11/12   航線: 2026/11/10 由南往北 (= B 最新版)
+ 詳細說明: xwing_vision_README.md     畫圖: xwing_plot/PLOT_STEPS.txt
+==================================================================
+
+所有指令都在 Orin NX 上打.
+專案資料夾: ~/catkin_ws/src/x-wing_vision_flight
+分支: claude/funny-gates-j8j7f7
+
+★ 現在的飛法 (鏡頭失焦還沒解決前): 一律加 --virtual-control
+   = 飛機照 B 的方式飛 (虛擬軌跡控制), 雲台 / 偵測只記錄, 飛完畫圖對照.
+   鏡頭能穩定偵測之後, 才拿掉 --virtual-control 改成目標偵測控制.
+
+
+------------------------------------------------------------------
+ 0. 出發前 (在實驗室, 有網路時)
+------------------------------------------------------------------
+# 第一次: 下載
+cd ~/catkin_ws/src
+git clone -b claude/funny-gates-j8j7f7 https://github.com/rossi1122/x-wing_vision_flight.git
+
+# 之後: 更新
+cd ~/catkin_ws/src/x-wing_vision_flight
+git pull origin claude/funny-gates-j8j7f7
+
+# 確認程式正常 (最後要印 PASS):
+python3 test_vision_guidance.py
+
+# 確認畫圖能跑 (最後要印 [test] 完成):
+cd xwing_plot && python3 test_plot_report.py --vision && cd ..
+    沒有套件: pip3 install pyserial numpy matplotlib
+
+# 確認虛擬軌跡 = 新航線 (要看到 23.7287278 和 23.7298417):
+grep -n "MOVING_START_GPS\|MOVING_HEADING_GPS" xwing_vision_config.py
+
+# 任務航點檔 (Mission Planner 載入, 跟虛擬軌跡配套):
+    xwing_vision_mission_S2N_20261110.waypoints   (= B 的 xwing_virtual_mission_S2N_20261110.waypoints)
+    WP2 轉彎點 (左轉往北) → 401 m → WP3 23.7235958, 120.3798693 (撥 GUIDED)
+    → 571 m → WP4 23.7287278, 120.3798473 (虛擬目標起點, 往北 0°)
+    起飛 / 降落航點照平常自己加在前後.
+
+
+------------------------------------------------------------------
+ 1. 到場地開機: 確認硬體 (Terminal 1)
+------------------------------------------------------------------
+ls -l /dev/ttyACM0                    # 飛控 (USB)
+ls -l /dev/serial/by-id/              # 要看到 usb-Silicon_Labs_CP2102... (雲台 UART)
+
+    看不到 CP2102 → 雲台 USB-UART 沒插好, 重插再 ls 一次
+
+
+------------------------------------------------------------------
+ 2. (選做) 雲台單獨測試 — 對方有沒有在送資料
+------------------------------------------------------------------
+python3 uart_mipi_receiver.py --port /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0
+
+    要看到: UART v10 (或對方的版本號) / CRC=OK / 「取像完成至 UART 驗證：估計 xx ms」
+    按 1 → 追蹤, 按 2 → 鎖定 -30°, 要出現 [模式已確認]
+    按 q → 結束        ★ 一定要按 q 關掉, 不然實飛程式打不開串口
+
+
+------------------------------------------------------------------
+ 3. 開 MAVROS (Terminal 1, 整天開著不要關)
+------------------------------------------------------------------
+roslaunch mavros apm.launch
+
+    要看到: CON: Got HEARTBEAT, connected. FCU: ArduPlane ...
+
+
+------------------------------------------------------------------
+ 4. 開飛行程式 (Terminal 2, 起飛前就開好)
+------------------------------------------------------------------
+★ 開之前: 飛控【不能】在 GUIDED (要在 AUTO / FBWA / MANUAL)
+
+cd ~/catkin_ws/src/x-wing_vision_flight
+
+# ★ 現在用這個 (偵測只記錄, 飛法 = B):
+python3 xwing_vision_flight.py --virtual-control --case flight1 2>&1 | tee console_flight1.txt
+
+# 鏡頭修好之後 (目標偵測控制, 推頭 = 看車俯角 ≥ 30°):
+python3 xwing_vision_flight.py --case flight1 2>&1 | tee console_flight1.txt
+
+# 程式中途結束要重開: --case 換名字 (flight2, flight3 ...)
+# 當天雲台壞掉: --virtual-control 後面再加 --no-vision (只能配 --virtual-control)
+
+★ 實飛【不要】加: --bench  --bench-dive  --ground-test  --start  --tgt-heading
+
+開好要看到:
+    [xwing] 目標來源: 虛擬軌跡 (偵測只記錄)          ← 正式模式是「★ 目標偵測」
+    [xwing] 虛擬目標 (控制): 起點 (23.7287278, 120.3798473) 方位 0.0° 速度 10.0 m/s
+    [xwing] 推頭門檻: 到虛擬目標水平距 ≤ 416 m        ← 正式模式是「看車俯角 ≥ 30.0° (不用高度)」
+    [xwing] 雲台 yaw 用法: GIMBAL_YAW_MODE='none'
+    [UARTVision] 已開啟 /dev/serial/by-id/usb-Silicon_Labs_CP2102...
+    [Bridge] 串流率設定完成 6/6
+    每秒一行 [SEARCH  ] ... | VIS link=1 det=? dep=... dist=... gmode=...
+
+    方位 180.0° 或起點 23.7222419 → 不是新航線, 不要飛
+    出現 ★★★ → 不要飛
+
+
+------------------------------------------------------------------
+ 5. 飛行中
+------------------------------------------------------------------
+一趟的順序 (同 B 的 xwing_virtual_ROUTE_S2N_20261110.md):
+  1) AUTO 240 m, 先繞一圈不切 GUIDED: 確認 WP2 左轉後對正往北、狀態列 VIS link=1
+  2) WP1→WP2 (南邊往東), 離 WP2 約 150 m → 喊車子出發
+       (車停 WP4 南方約 50 m ≈ 23.7282786, 120.3798473, 車頭朝北)
+  3) WP2 左轉往北, 對正
+  4) 到 WP3 → 地面站 Set Mode GUIDED (數傳延遲 0.5~1 s, 可稍提早)
+
+切 GUIDED 後要看到:
+    切 GUIDED 時離目標起點 約 570 m        ← 出現「不啟動任務」= 位置/高度/方向不對
+    SEARCH → PRE_DIVE → DIVE → PULLOUT → DONE
+    DONE 之後由飛手切出 GUIDED
+
+Terminal 2 可以打的鍵 (打完按 Enter):
+    x    中止: 拉起 2.5 s 後放手給飛控     (飛手撥 FBWA 比這個快, 優先用遙控器)
+    q    結束程式 (存好 log)
+    d    手動 ARM — 實飛不用, GUIDED 上升沿會自動開始
+
+正式模式 (沒有 --virtual-control) 多注意:
+    一直沒看到車 → 不會推頭, 停在 SEARCH → 飛手切出 GUIDED
+    PRE_DIVE / DIVE 看不到車 > 1.5 s → 自動 ABORT 拉起
+
+
+------------------------------------------------------------------
+ 6. 換下一趟 (飛機在 AUTO 繞圈時)
+------------------------------------------------------------------
+不用動 Terminal 2, 下一圈到 WP3 再切 GUIDED
+    (切出 GUIDED 1 s 後出現「任務重置 — 下次撥 GUIDED = 第 N 趟」)
+看到「不啟動任務: 原因」(高度 < 200 m / 離 WP4 不在 486~1500 m / WP4 不在機頭前方 45° 內)
+    → 切回 AUTO, 下一圈到 WP3 再切
+
+
+------------------------------------------------------------------
+ 7. 落地後
+------------------------------------------------------------------
+# Terminal 2: 輸入 q 按 Enter (如果還沒結束)
+
+# 雲台還停在鎖定 → 讓它回追蹤 (收到第一筆資料就送 '1'), 看到 [模式已確認] 後按 q:
+python3 uart_mipi_receiver.py --port /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0 --mode 1
+
+# 找 log:
+ls -lt flight_logs/ | head
+    flight_logs/xwing_vision_<時間>_flight1.csv            (CSV 的 run 欄位 = 第幾趟)
+    flight_logs/xwing_vision_<時間>_flight1_events.txt
+    flight_logs/xwing_vision_<時間>_flight1_uart_raw.bin   (雲台原始 byte)
+    console_flight1.txt                                    (專案資料夾)
+
+# 拷到隨身碟:
+ls /media/$USER/
+cp -r ~/catkin_ws/src/x-wing_vision_flight/flight_logs /media/$USER/<隨身碟>/ && sync
+
+另外要帶回來:
+    ★ 車子飛控 SD 卡 LOGS/ 當天的 .BIN   (畫圖時跟真車比對, 沒有就只能跟虛擬目標比)
+    飛機飛控 .BIN (Mission Planner → DataFlash Logs)、對方的雲台 log
+
+# 關 MAVROS: Terminal 1 按 Ctrl+C
+
+
+------------------------------------------------------------------
+ 8. 飛完畫圖 (筆電照抄: xwing_plot/PLOT_STEPS.txt, 詳細: xwing_plot/PLOT_GUIDE.md)
+------------------------------------------------------------------
+cd ~/catkin_ws/src/x-wing_vision_flight/xwing_plot
+
+# 車子 .BIN 放進 xwing_plot/car_bin/ (有放就自動比對真車)
+
+python3 xwing_plot_report.py --all          # ★ flight_logs/ 每一份、每一趟都畫
+python3 xwing_plot_report.py --latest       # 只畫最新那份
+
+# 結果 (每一趟一個資料夾):
+xwing_plot/plot_results/<log 檔名>/run1/report.pdf    ← 全部圖, 給老師看
+xwing_plot/plot_results/<log 檔名>/run1/summary.txt   ← 時間線 + 數字 + 自動檢查
+
+# summary.txt 先看【目標偵測對照】這段:
+    看得到目標的比例 (SEARCH / PRE_DIVE / DIVE)
+    角度判斷會在什麼時候推頭 (比實際早 / 晚幾秒)
+    偵測位置 vs 真車 (準不準)
+    雲台校正估計 → GIMBAL_PITCH_OFFSET_DEG / GIMBAL_YAW_OFFSET_DEG 建議加多少
+圖: Fig V1 看車俯角 vs 推頭、Fig V2 地圖、Fig V3 偵測位置誤差、Fig V4 航向、Fig V5 偵測 / 延遲
+
+
+------------------------------------------------------------------
+ 出問題時
+------------------------------------------------------------------
+could not open port / No such file   → ls -l /dev/serial/by-id/ 看雲台有沒有插上
+                                        (或加 --vision-port /dev/ttyUSB0 試)
+串口被占用 (Device or resource busy)  → uart_mipi_receiver.py 沒關, 回去按 q / Ctrl+C
+[FATAL] 目標來自偵測就一定要開雲台     → 正式模式一定要接雲台; 雲台壞了改用 --virtual-control
+MAVROS 連不上                         → 拔插飛控 USB, ls -l /dev/ttyACM0, 重開 Terminal 1
+不啟動任務: 離目標起點 ... m           → 航點檔不是 S2N 版, 或撥 GUIDED 的位置不在 WP3 附近
+雲台不能用但飛機正常                  → --virtual-control --no-vision 照飛 (只是沒有偵測資料)

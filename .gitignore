@@ -1,3 +1,8 @@
 __pycache__/
 *.pyc
 flight_logs/
+
+# xwing_plot 輸出 / 測試產物 / 車子 BIN
+xwing_plot/plot_results/
+xwing_plot/plot_test/
+xwing_plot/car_bin/

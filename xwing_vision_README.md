@@ -134,6 +134,10 @@ SEARCH 段原本就沒有逾時：一直沒看到車就不會推頭，**由駕�
 | `vision_sim_camera.py` / `xwing_vision_sim.py` | 新增 | 桌上閉迴路模擬 (真車 + 模擬對方雲台) |
 | `test_vision_guidance.py` | 新增 | 71 項測試 |
 
+| `FLIGHT_DAY_QUICK.txt` | 新增 | ★ 飛測日照順序操作的指令與檢查 |
+| `xwing_vision_mission_S2N_20261110.waypoints` | = B | 11/10 由南往北任務航點 (Mission Planner 載入) |
+| `xwing_plot/` | 從 B 複製並改成讀 xwing_vision log | 飛完畫圖：Fig 1~15 (同 B) + **Fig V1~V5 目標偵測對照** (`xwing_plot_vision.py`)；說明見 `xwing_plot/PLOT_GUIDE.md` |
+
 `dive_guidance.py`、`attitude_bridge.py`、`run_vision_flight.py` 等原檔**都沒有改**。
 
 ## 4. 新增的參數 (`xwing_vision_config.py`)
