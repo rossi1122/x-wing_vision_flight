@@ -136,7 +136,8 @@ def measure(pkt, pose_angles, agl, cfg, ctrl, ground=False):
 VG_CSV_FIELDS = [
     'vg_new',            # 1 = 這拍拿到新的辨識結果
     'vg_valid',          # 1 = 這拍看得到目標 (= 餵給狀態機的 tgt_valid)
-    'vg_reason',         # 看不到的原因 (no_target / no_pose / ray_up / stale / no_data)
+    'vg_reason',         # 看不到的原因 (no_target / no_angle / no_pose / ray_up / stale / no_data)
+                         #   no_angle = 有目標, 但雲台回報的 pitch / roll 是 NaN (角度無效), 沒辦法換算
     'vg_ground',         # 1 = 地面模式 (飛控高度 < VISION_GROUND_AGL_M): 角度照算
     'vg_geom',           # full = 角度 + 距離 + 位置; angle = 只有角度 (地面, 沒有高度可用)
     'vg_time_src',       # 取像時刻來源: capture (v7/v8 校時) / rx (沒校時, 用收到時刻)
@@ -215,6 +216,8 @@ class VisionSource:
             self._yaw_cmp = None
         if not pkt.get('valid'):
             return 'no_target'
+        if not (_finite(pkt.get('pitch')) and _finite(pkt.get('roll'))):
+            return 'no_angle'          # 2026/11/16 大雲台實測: 角度欄位全是 NaN
         if pose is None:
             return 'no_pose'
         m = measure(pkt, pose['angles'], agl, cfg, self.ctrl, ground=self.on_ground(agl))

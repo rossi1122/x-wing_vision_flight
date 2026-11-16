@@ -313,6 +313,11 @@ def test_source():
     check(f['tgt_valid'] and row['vg_geom'] == 'full' and row['vg_ground'] == 1,
           "地面但氣壓高度 5 m: 角度 + 距離都算 (距離僅供參考)")
     src.reset()
+    f, row = src.get_fields(pkt(24, 960, 540, 10.2, pitch=float('nan')), 10.2, poses,
+                            240.0, 0.0, 0.0)
+    check(not f['tgt_valid'] and row['vg_reason'] == 'no_angle',
+          "雲台 pitch = NaN (角度無效) → 看不到, 原因 no_angle (不是 ray_up)")
+    src.reset()
     f, row = src.get_fields(pkt(23, 960, 0, 10.2, pitch=20.0), 10.2, poses, 240.0, 0.0, 0.0)
     check(not f['tgt_valid'] and row['vg_reason'] == 'ray_up' and row['vg_ground'] == 0,
           "空中 240 m 射線朝上 → 照舊判無效 (ray_up)")

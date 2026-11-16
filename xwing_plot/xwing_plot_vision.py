@@ -448,11 +448,32 @@ def summarise(R, d, car, info, st):
         nums.append(f'撥 GUIDED 後第一次看到目標: t = {t_det:.2f} s, 偵測水平距 '
                     f'{_f(d["vg_ground"][i], "{:.0f}", " m")}, 俯角 {_f(d["dep"][i], "{:.1f}", "°")}')
     else:
-        nums.append('撥 GUIDED 後一直沒看到目標')
+        nums.append('撥 GUIDED 後一直沒有能換算的偵測 (雲台本身有沒有看到, 見下一行)')
     seen = [f'{m} {st[f"seen_{m}"]:.0f}%' for m in ('SEARCH', 'PRE_DIVE', 'DIVE')
             if f'seen_{m}' in st]
     if seen:
-        nums.append('看得到目標的比例: ' + '  '.join(seen))
+        nums.append('看得到目標的比例 (能換算成角度): ' + '  '.join(seen))
+    # 雲台本身有沒有看到 (vis_valid) vs 能不能換算 (vg_valid): 兩者差很多 = 角度 / 姿態有問題
+    L = R.L
+    g = R.mode != ''
+    raw = (L.num('vis_valid') > 0) if 'vis_valid' in L.cols else None
+    if raw is not None and g.any():
+        raw_pct = float(np.mean(raw[g])) * 100.0
+        conv_pct = float(np.mean(d['valid'][g])) * 100.0
+        reasons = {}
+        for k_, why in zip(g, L.s('vg_reason')):
+            if k_ and why:
+                reasons[why] = reasons.get(why, 0) + 1
+        top = ', '.join(f'{k} {v * 100.0 / g.sum():.0f}%' for k, v in
+                        sorted(reasons.items(), key=lambda x: -x[1])[:3])
+        nums.append(f'雲台有看到目標 (vis_valid) {raw_pct:.0f}%  /  能換算 (vg_valid) {conv_pct:.0f}%'
+                    + (f'  — 換算不了的原因: {top}' if top else ''))
+        st['raw_seen'] = raw_pct
+        st['conv_seen'] = conv_pct
+        st['no_angle'] = reasons.get('no_angle', 0) * 100.0 / max(int(g.sum()), 1)
+        if 'vis_gimbal_pitch' in L.cols:
+            gp = L.num('vis_gimbal_pitch')
+            st['pitch_nan'] = float(np.mean(~np.isfinite(gp[g]))) * 100.0
     pd0, ta, tdst = st.get('t_pd'), st.get('t_ang'), st.get('t_dst')
     if pd0 is not None:
         i = int(np.argmin(np.abs(t - pd0)))
@@ -497,6 +518,14 @@ def summarise(R, d, car, info, st):
                     f'方位偏 {st["calib_brg_err"]:+.2f}° (四分位距 {st["calib_brg_iqr"]:.2f}°)')
 
     # ── 自動檢查 ──
+    if st.get('pitch_nan') is not None and st['pitch_nan'] > 50:
+        chk.append(f'✗ 雲台回報的 pitch 有 {st["pitch_nan"]:.0f}% 是 NaN (角度無效) — 偵測沒辦法換算成角度 / 距離; '
+                   '請對方確認雲台角度有輸出 (uart_mipi_receiver 的「雲台 Pitch 角度」不能是 N/A)')
+    elif st.get('no_angle', 0) > 10:
+        chk.append(f'⚠ {st["no_angle"]:.0f}% 的偵測因為雲台角度無效 (no_angle) 不能用')
+    if (st.get('raw_seen') is not None and st.get('conv_seen') is not None
+            and st['raw_seen'] - st['conv_seen'] > 20 and not st.get('pitch_nan', 0) > 50):
+        chk.append(f'⚠ 雲台有看到 {st["raw_seen"]:.0f}%, 但只有 {st["conv_seen"]:.0f}% 能換算 — 看上面的原因')
     for m in ('PRE_DIVE', 'DIVE'):
         r_ = st.get(f'seen_{m}')
         if r_ is not None and r_ < 80:
