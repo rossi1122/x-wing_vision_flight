@@ -137,6 +137,7 @@ SEARCH 段原本就沒有逾時：一直沒看到車就不會推頭，**由駕�
 
 | `FLIGHT_DAY_QUICK.txt` | 新增 | ★ 飛測日照順序操作的指令與檢查 |
 | `xwing_vision_mission_S2N_20261110.waypoints` | = B | 11/10 由南往北任務航點 (Mission Planner 載入) |
+| `test_records/` | 新增 | 測試紀錄 (每次一個資料夾: log 原檔 + `測試紀錄.md`)；索引見 `test_records/README.md` |
 | `xwing_plot/` | 從 B 複製並改成讀 xwing_vision log | 飛完畫圖：Fig 1~15 (同 B) + **Fig V1~V5 目標偵測對照** (`xwing_plot_vision.py`)；說明見 `xwing_plot/PLOT_GUIDE.md` |
 
 `dive_guidance.py`、`attitude_bridge.py`、`run_vision_flight.py` 等原檔**都沒有改**。
