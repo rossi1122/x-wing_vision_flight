@@ -384,6 +384,10 @@ def fig_v5_health(R, path, sub, pdf, RP, d, st):
     a.legend(fontsize=8, loc='upper right')
     st['yaw_diff_med'] = _med(yd)
     st['yaw_diff_std'] = float(np.nanstd(yd)) if np.isfinite(yd).sum() > 2 else None
+    gy = L.num('vis_gimbal_yaw') if 'vis_gimbal_yaw' in L.cols else np.full(L.n, np.nan)
+    st['gyaw_med'] = _med(_wrap(gy))
+    st['gyaw_min'] = float(np.nanmin(_wrap(gy))) if np.isfinite(gy).any() else None
+    st['gyaw_max'] = float(np.nanmax(_wrap(gy))) if np.isfinite(gy).any() else None
     RP.stat_box(a, f'median {_f(st["yaw_diff_med"], "{:+.1f}", " deg")}, '
                    f'std {_f(st["yaw_diff_std"], "{:.1f}", " deg")}', loc='upper left')
     if np.isfinite(yd).any():
@@ -512,6 +516,13 @@ def summarise(R, d, car, info, st):
     nums.append(f'影像延遲 (取像→收到) 中位數 {_f(st.get("e2e_med"), "{:.0f}", " ms")}; '
                 f'雲台 yaw − 飛控航向 中位數 {_f(st.get("yaw_diff_med"), "{:+.1f}", "°")}, '
                 f'標準差 {_f(st.get("yaw_diff_std"), "{:.1f}", "°")}')
+    if st.get('gyaw_med') is not None:
+        nums.append(f'雲台回報 yaw (原始值): 中位數 {st["gyaw_med"]:+.1f}°, '
+                    f'範圍 {st["gyaw_min"]:+.1f}° ~ {st["gyaw_max"]:+.1f}°')
+    # 對地 yaw 應該 ≈ 機頭航向 (差磁偏角 / 安裝偏差, 幾度以內); yaw ≈ 0 但航向不是 0 → 相對機頭
+    yaw_rel = (st.get('gyaw_med') is not None and st.get('yaw_diff_med') is not None
+               and abs(st['gyaw_med']) < 20.0 and abs(st['yaw_diff_med']) > 30.0)
+    st['yaw_rel'] = yaw_rel
     if st.get('calib_n'):
         nums.append(f'雲台校正估計 (對真車, {st["calib_n"]} 筆): 俯角少算 '
                     f'{st["calib_dep_err"]:+.2f}° (四分位距 {st["calib_dep_iqr"]:.2f}°), '
@@ -551,6 +562,13 @@ def summarise(R, d, car, info, st):
         if abs(dd) <= 0.5 and abs(db) <= 1.0:
             chk.append('✓ 雲台俯角 / 方位跟真車一致 (偏差 < 0.5° / 1°)')
     ys = st.get('yaw_diff_std')
+    if yaw_rel:
+        chk.append(f'⚠ 雲台 yaw ≈ {st["gyaw_med"]:+.1f}° (機頭航向 ≈ {(st["gyaw_med"] - st["yaw_diff_med"]) % 360:.0f}°): '
+                   '看起來是「相對機頭」(置中) 而不是對地方位, 雲台 yaw − 飛控航向 的比較沒有意義; '
+                   'yaw 範圍 ' + f'{st["gyaw_min"]:+.1f}° ~ {st["gyaw_max"]:+.1f}°'
+                   + (' — 有轉動, 請確認飛行中 yaw 會不會動' if max(abs(st['gyaw_min']), abs(st['gyaw_max'])) > 3
+                      else ''))
+        ys = None
     if ys is not None:
         chk.append(('✓' if ys < 2.0 else '⚠') + f' 雲台 yaw − 飛控航向 標準差 {ys:.1f}°'
                    + (' (穩定)' if ys < 2.0 else ' (不穩, 維持 GIMBAL_YAW_MODE=none)'))

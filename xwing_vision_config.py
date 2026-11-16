@@ -153,7 +153,10 @@ class XwingVisionConfig:
     #   'none'  : 不用 yaw, 相機方位 = 飛機 yaw (= 2026/11 確認的「沒有 yaw 軸」, 預設)
     #   'body'  : yaw = 相機相對機頭 (右為正)   → 相機方位 = 飛機 yaw + yaw
     #   'earth' : yaw = 相機真方位 (對地)       → 相機方位 = yaw
-    #   ★ 2026/11/10 確認: yaw = 對地角度, 雲台 yaw 保持置中 (相機一直朝機頭).
+    #   ★ 2026/11/16 田屋小雲台實測: 機頭 184° 時 yaw 回報 ≈ +0.3° → 看起來是「相對機頭」,
+    #     不是對地 (待對方確認). 飛行中 yaw 會轉的話要改 'body'; 一直 ≈ 0 就維持 'none'.
+    #     (test_records/20261116_tianwu_small_gimbal_link_test/測試紀錄.md)
+    #   ★ 2026/11/10 原本的認知: yaw = 對地角度, 雲台 yaw 保持置中 (相機一直朝機頭).
     #     → 'none' 與 'earth' 理論上同一個方向. 維持 'none' (用飛控的機頭航向:
     #       EKF 融合 GPS / 羅盤, 跟目標位置、導航同一個基準). 雲台 yaw 記在
     #       vg_gimbal_yaw_deg / vg_yaw_diff_deg 對照, 差值穩定才考慮改 'earth'.
