@@ -528,6 +528,26 @@ def summarise(R, d, car, info, st):
                     f'{st["calib_dep_err"]:+.2f}° (四分位距 {st["calib_dep_iqr"]:.2f}°), '
                     f'方位偏 {st["calib_brg_err"]:+.2f}° (四分位距 {st["calib_brg_iqr"]:.2f}°)')
 
+    # 雲台模式跟要求不一致 (超過 1 s 的時段): 例 SEARCH 要求 '1' 但雲台自己切到 '2'
+    L = R.L
+    if 'gimbal_mode_req' in L.cols and 'vis_gimbal_mode' in L.cols:
+        req, got = L.s('gimbal_mode_req'), L.s('vis_gimbal_mode')
+        segs, a0 = [], None
+        for i in range(L.n):
+            bad = bool(req[i]) and got[i] != '' and got[i] != req[i]
+            if bad and a0 is None:
+                a0 = i
+            if (not bad or i == L.n - 1) and a0 is not None:
+                b0 = i if bad else i - 1
+                if t[b0] - t[a0] >= 1.0:
+                    segs.append((t[a0], t[b0], req[a0], got[a0], R.mode[a0]))
+                a0 = None
+        st['mode_mismatch'] = segs
+        if segs:
+            nums.append('雲台模式跟要求不一致 (> 1 s): ' + '; '.join(
+                f't {x0:.1f}~{x1:.1f} s 要求 {rq} 回報 {gt} ({md or "非 GUIDED"})'
+                for x0, x1, rq, gt, md in segs))
+
     # ── 自動檢查 ──
     if st.get('pitch_nan') is not None and st['pitch_nan'] > 50:
         chk.append(f'✗ 雲台回報的 pitch 有 {st["pitch_nan"]:.0f}% 是 NaN (角度無效) — 偵測沒辦法換算成角度 / 距離; '
@@ -537,6 +557,10 @@ def summarise(R, d, car, info, st):
     if (st.get('raw_seen') is not None and st.get('conv_seen') is not None
             and st['raw_seen'] - st['conv_seen'] > 20 and not st.get('pitch_nan', 0) > 50):
         chk.append(f'⚠ 雲台有看到 {st["raw_seen"]:.0f}%, 但只有 {st["conv_seen"]:.0f}% 能換算 — 看上面的原因')
+    if st.get('mode_mismatch'):
+        tot = sum(x1 - x0 for x0, x1, *_ in st['mode_mismatch'])
+        chk.append(f'⚠ 雲台有 {len(st["mode_mismatch"])} 段 (共 {tot:.1f} s) 沒有照要求的模式 '
+                   '(程式每秒重送, 最多 3 次) — 請對方確認是不是雲台自己切換')
     for m in ('PRE_DIVE', 'DIVE'):
         r_ = st.get(f'seen_{m}')
         if r_ is not None and r_ < 80:
