@@ -1,0 +1,35 @@
+    0.00s  xwing_vision: 目標來源=虛擬軌跡 巡航 240m/30m/s 俯衝 30° 拉平 140m Vmax 60m/s 推頭: 到虛擬目標水平距 ≤ 416 m
+    0.00s  DIVE 方向舵: 方向舵 PID (版本 A); 空速排程 RUDDER_VSCHED=((999.0, 1.0),)
+    0.01s  虛擬目標 (控制) 移動 起點 (23.7287278, 120.3798473) 方位 0.0° 速度 10.0 m/s
+    0.01s  雲台視覺 UART: /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0 @ 115200; 模式鍵 ON {'STANDBY': None, 'SEARCH': '1', 'PRE_DIVE': '2', 'DIVE': '2', 'PULLOUT': None, 'DONE': '1', 'ABORT': None}
+    0.01s  [UARTVision] 傳輸診斷 → xwing_vision_19700103_080739_virtual_uart_raw.bin / _uart_health.csv
+    0.15s  雲台狀態 → STANDBY: 模式鍵 不要求
+  240.39s  ★ GUIDED 上升沿 — 種點 + ARM (第 1 趟任務開始)
+  240.39s  切 GUIDED 時離目標起點 83154 m
+  240.40s  種點(移動): 虛擬目標起點 NED=(0.0,0.0) 方位 0.0° 速度 10.0 m/s
+  240.40s  TECS 目標預送 (背景) ALT=240m SPD=30m/s
+  240.40s  雲台狀態 → SEARCH: 模式鍵 '1'
+  240.41s  TECS 目標預送完成 ALT=240m SPD=30m/s ok=(True,True)
+  240.47s  雲台回報模式 '1' 已確認 (要求後 0.05s)
+  255.65s  ★ 離開 GUIDED (fc_mode=MANUAL) — 第 1 趟 mode=SEARCH (1s 內沒回來就重置)
+  255.65s  雲台狀態 → STANDBY: 模式鍵 不要求
+  256.67s  任務重置 — 下次撥 GUIDED = 第 2 趟 (重新偵測目標; 虛擬目標回到起點)
+  282.93s  ★ GUIDED 上升沿 — 種點 + ARM (第 2 趟任務開始)
+  282.93s  切 GUIDED 時離目標起點 83154 m
+  282.94s  種點(移動): 虛擬目標起點 NED=(0.0,0.0) 方位 0.0° 速度 10.0 m/s
+  282.94s  TECS 目標預送 (背景) ALT=240m SPD=30m/s
+  282.94s  雲台狀態 → SEARCH: 模式鍵 '1'
+  282.96s  TECS 目標預送完成 ALT=240m SPD=30m/s ok=(True,True)
+  282.99s  雲台回報模式 '1' 已確認 (要求後 0.04s)
+  362.65s  ★ 離開 GUIDED (fc_mode=FBWA) — 第 2 趟 mode=SEARCH (1s 內沒回來就重置)
+  362.65s  雲台狀態 → STANDBY: 模式鍵 不要求
+  363.67s  任務重置 — 下次撥 GUIDED = 第 3 趟 (重新偵測目標; 虛擬目標回到起點)
+  393.15s  ★ GUIDED 上升沿 — 種點 + ARM (第 3 趟任務開始)
+  393.15s  切 GUIDED 時離目標起點 83155 m
+  393.16s  種點(移動): 虛擬目標起點 NED=(0.0,0.0) 方位 0.0° 速度 10.0 m/s
+  393.16s  TECS 目標預送 (背景) ALT=240m SPD=30m/s
+  393.16s  雲台狀態 → SEARCH: 模式鍵 '1'
+  393.17s  TECS 目標預送完成 ALT=240m SPD=30m/s ok=(True,True)
+  393.23s  雲台回報模式 '1' 已確認 (要求後 0.06s)
+  438.00s  雲台視覺 UART 統計: {'frames': 13138, 'clock': 219, 'bytes': 1203880, 'header': 0, 'crc': 0, 'payload': 0, 'discarded': 0, 'reopen': 0, 'mode_tx': 5, 'serial_err': 0, 'open_fail': 0, 'tx_bytes': 3947, 'rx_gaps': 0}
+  438.00s  程式結束 mode=SEARCH errors=0 時長 438.0s

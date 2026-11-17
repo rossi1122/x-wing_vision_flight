@@ -587,11 +587,15 @@ def summarise(R, d, car, info, st):
             chk.append('✓ 雲台俯角 / 方位跟真車一致 (偏差 < 0.5° / 1°)')
     ys = st.get('yaw_diff_std')
     if yaw_rel:
-        chk.append(f'⚠ 雲台 yaw ≈ {st["gyaw_med"]:+.1f}° (機頭航向 ≈ {(st["gyaw_med"] - st["yaw_diff_med"]) % 360:.0f}°): '
-                   '看起來是「相對機頭」(置中) 而不是對地方位, 雲台 yaw − 飛控航向 的比較沒有意義; '
-                   'yaw 範圍 ' + f'{st["gyaw_min"]:+.1f}° ~ {st["gyaw_max"]:+.1f}°'
-                   + (' — 有轉動, 請確認飛行中 yaw 會不會動' if max(abs(st['gyaw_min']), abs(st['gyaw_max'])) > 3
-                      else ''))
+        # 2026/11/16 確認: 田屋小雲台 yaw = 相對機頭, yaw 軸不會轉 → GIMBAL_YAW_MODE='none' 正確
+        moved = max(abs(st['gyaw_min']), abs(st['gyaw_max'])) > 3
+        rng = f'{st["gyaw_min"]:+.1f}° ~ {st["gyaw_max"]:+.1f}°'
+        if moved:
+            chk.append(f'⚠ 雲台 yaw (相對機頭) 有轉動: {rng} — GIMBAL_YAW_MODE=\'none\' 假設相機朝機頭, '
+                       '轉動期間算出來的方位會偏這麼多; 確認是不是有人動到雲台 / 雲台會跟著目標轉')
+        else:
+            chk.append(f'✓ 雲台 yaw 相對機頭、沒有轉動 ({rng}), 符合 GIMBAL_YAW_MODE=\'none\' '
+                       '(yaw − 飛控航向 的比較不適用)')
         ys = None
     if ys is not None:
         chk.append(('✓' if ys < 2.0 else '⚠') + f' 雲台 yaw − 飛控航向 標準差 {ys:.1f}°'
