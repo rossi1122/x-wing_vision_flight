@@ -34,6 +34,7 @@ import array
 import json
 import math
 import os
+import re
 import struct
 import subprocess
 import threading
@@ -212,6 +213,7 @@ class UartVisionLink:
         self._rx_down_tx0 = 0          # 斷線開始時已送出的 TX byte
         self._rx_down_report_t = 0.0
         self._dmesg_n = 0
+        self._icount_seen = False      # 驅動層 rx 計數有沒有動過 (cp210x 等驅動不計數, 永遠 0)
         self._t_start = time.monotonic()
 
     # ------------------------------------------------------------------
@@ -386,8 +388,7 @@ class UartVisionLink:
                    f"(埠 {'存在' if os.path.exists(self.port) else '★不存在'}"
                    f", 串口 {'開著' if self._ser is not None else '★關閉'}"
                    f", 累計 RX {st['bytes']} / TX {st['tx_bytes']} bytes"
-                   + (f", 驅動 rx={ic['rx']} frame={ic['frame']} brk={ic['brk']}"
-                      f" overrun={ic['overrun']}" if ic else '')
+                   + self._icount_text(ic, overrun=True)
                    + (f", 最後封包 id={self._latest.get('result_id')}" if self._latest else '')
                    + ")")
             self._raw_note(msg)
@@ -409,7 +410,7 @@ class UartVisionLink:
                        f"{sent} bytes "
                        + ("(★ 串口沒開, 沒有送)" if self._ser is None
                           else "(我們這邊有在送)" if sent else "(串口開著, 這段沒有要送的)")
-                       + (f"; 驅動 rx={ic['rx']} frame={ic['frame']} brk={ic['brk']}" if ic else ''))
+                       + self._icount_text(ic, sep='; '))
                 self._raw_note(msg)
                 self.log(msg)
 
@@ -418,6 +419,8 @@ class UartVisionLink:
         self._health_t = now
         prev = self._health_prev or {}
         ic = _icount(self._ser) or {}
+        if ic.get('rx'):
+            self._icount_seen = True
         lines = {}
         if self._ser is not None:
             for k, attr in (('line_cts', 'cts'), ('line_dsr', 'dsr'),
@@ -462,6 +465,15 @@ class UartVisionLink:
         except (OSError, ValueError):
             pass
 
+    def _icount_text(self, ic, sep=', ', overrun=False):
+        """斷線訊息裡的驅動層計數. 計數從來沒動過 (驅動不支援) 就直接說, 不印 0 誤導."""
+        if not ic:
+            return ''
+        if not self._icount_seen:
+            return f"{sep}驅動層計數: 這個 USB-UART 驅動不計數 (一直是 0, 不代表線上沒資料)"
+        return (f"{sep}驅動 rx={ic['rx']} frame={ic['frame']} brk={ic['brk']}"
+                + (f" overrun={ic['overrun']}" if overrun else ''))
+
     def _dmesg_snapshot(self, tag):
         """RX 斷線當下的 kernel 訊息存檔 (背景執行, 最多 5 份)."""
         if self._diag_prefix is None or self._dmesg_n >= 5:
@@ -471,12 +483,28 @@ class UartVisionLink:
 
         def run():
             out = []
-            for cmd in (['dmesg', '-T'], ['journalctl', '-k', '-n', '200', '--no-pager', '-o', 'short-iso']):
+            # ★ 2026/11/17: Orin 的 Wi-Fi 掃描訊息 (rtw / PHL) 每秒上百行, 最後 200 行全是它,
+            #   USB / 串口訊息會被擠掉 → 先存「過濾過、只留 USB / tty / cp210x」的,
+            #   再存最後 40 行原文.
+            key = re.compile(r'usb|tty|cp210|serial|uart|disconnect|enumerat|over-?current',
+                             re.IGNORECASE)
+            for cmd, filt in ((['journalctl', '-k', '-n', '5000', '--no-pager', '-o', 'short-iso'], True),
+                              (['dmesg', '-T'], True),
+                              (['journalctl', '-k', '-n', '40', '--no-pager', '-o', 'short-iso'], False)):
                 try:
                     r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
                     text = (r.stdout or '') + (r.stderr or '')
-                    out.append(f"$ {' '.join(cmd)}  (exit {r.returncode})\n"
-                               + '\n'.join(text.splitlines()[-200:]))
+                    lines = text.splitlines()
+                    if filt and r.returncode == 0:
+                        lines = [ln for ln in lines if key.search(ln)][-200:]
+                        head = (f"$ {' '.join(cmd)} | 只留 USB / tty / cp210x 相關  (exit 0, "
+                                f"{len(lines)} 行)")
+                        if not lines:
+                            lines = ['(沒有 USB / 串口相關的 kernel 訊息 → USB-UART 沒有斷線 / 重新列舉)']
+                    else:
+                        head = f"$ {' '.join(cmd)}  (exit {r.returncode})"
+                        lines = lines[-200:]
+                    out.append(head + '\n' + '\n'.join(lines))
                 except Exception as e:
                     out.append(f"$ {' '.join(cmd)}  失敗: {e}")
             try:
