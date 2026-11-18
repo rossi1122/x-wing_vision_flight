@@ -70,6 +70,10 @@ python3 uart_mipi_receiver.py --port /dev/serial/by-id/usb-Silicon_Labs_CP2102_U
 ------------------------------------------------------------------
  3. 開 MAVROS (Terminal 1, 整天開著不要關)
 ------------------------------------------------------------------
+★ 先把飛機的電全部接好 (主電池 + 8 V 電池)、等飛控開機完成, 再開 MAVROS
+  (11/18 台鴞: 開好 MAVROS 後才接主電池 → 飛控重開機 → MAVROS 沒重連 → 撥 GUIDED 沒反應)
+★ 之後只要飛控重開過 (換電池 / 插拔電源 / 寫參數重開), MAVROS 和飛行程式都要重開
+
 roslaunch mavros apm.launch
 
     要看到: CON: Got HEARTBEAT, connected. FCU: ArduPlane ...
