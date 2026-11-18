@@ -1,0 +1,97 @@
+log : /tmp/claude-0/-home-user-x-wing-vision-flight/c766d6ff-5a4c-5525-976a-6f192590c1f1/scratchpad/flight1118_extract/xwing_vision_19700104_022649_virtual.csv
+趟次: run 3
+時間 0 = 撥 GUIDED (log t = 2122.33 s)
+參數: 巡航 240 m / 俯衝 30° / 拉平 140 m / Vmax 60 m/s; PID_LAT 2/0.2/0, PID_LON 0.8/0.1/0.2, K_LAT_TO_RUDDER 0.5
+
+【模式時間線】
+     0.00 ~   12.58 s  SEARCH   (12.58 s)  進入時 AGL 240.5 m  V 30.5 m/s  離目標 615 m
+    12.58 ~   14.46 s  PRE_DIVE ( 1.88 s)  進入時 AGL 239.8 m  V 30.4 m/s  離目標 416 m
+    14.46 ~   19.62 s  DIVE     ( 5.16 s)  進入時 AGL 232.5 m  V 27.2 m/s  離目標 383 m
+    19.62 ~   20.14 s  PULLOUT  ( 0.52 s)  進入時 AGL 148.3 m  V 38.8 m/s  離目標 259 m
+    20.14 ~   21.94 s  DONE     ( 1.80 s)  進入時 AGL 139.3 m  V 42.3 m/s  離目標 244 m
+
+【數字】
+  撥 GUIDED: AGL 240.5 m, 空速 30.5 m/s, 離虛擬起點 615 m
+  推頭前 2 s 航向誤差 +2.8°
+  PRE_DIVE 推頭用時 1.88 s
+  DIVE 時長 5.14 s, 平均航跡角 γ -24.6° (設計 −30°)
+  DIVE pitch 追蹤 RMSE 3.72°, 最大差 5.1°
+  DIVE 最大空速 39.3 m/s (上限 60)
+  橫向影像誤差 DIVE RMSE 1.09°, 後半段平均 -0.38°, 結束 +0.04°, 擺盪 0.68 Hz
+  縱向影像誤差 DIVE RMSE 3.51°, 後半段平均 +4.06°, 結束 +3.75°, 擺盪 0.00 Hz
+  方向舵 DIVE 最大 2.6°, 打到限幅 0 % 時間, 被 roll 保護限制 0 %
+  DIVE 最大 |roll| 5.1°
+  DIVE 結束時預測落點誤差 14.9 m (沿航跡 -10.4, 側向 +10.8)
+  程式成績: 成績: miss = 15.67 m (lon -11.72, lat +10.41) — 對虛擬目標
+  PULLOUT 開始 AGL 148.3 m / V 38.8 m/s, 之後最低 AGL 123.6 m (GUIDED 中)
+  DIVE 空速計 / GPS 速度 = 0.93 (空速 35.1, GPS 37.9 m/s)
+  SEARCH: 機頭 − 地速方向 (偏航修正角) -0.4°, 估計風 4.3 m/s 從 356° 吹來 (用空速估, 僅供參考)
+  DIVE: 機頭 − 地速方向 (偏航修正角) -0.9°, 估計風 2.9 m/s 從 192° 吹來 (用空速估, 僅供參考)
+  控制迴路週期 中位數 20.0 ms, 最大 21 ms, >40 ms 佔 0.00 %
+  電壓最低: battery (low-V pack) 7.98 V, battery (high-V pack) 50.19 V
+  雲台 UART 連線 100.0 % (GUIDED 期間); 偵測率 SEARCH 0.6 %, PRE_DIVE 0.0 %, DIVE 0.0 %
+  雲台鎖定 −30° 到位: PRE_DIVE 後 0.54 s
+
+【自動檢查】 (✓ 正常  ⚠ 建議看  ✗ 有問題  · 說明; 只是根據 log 的提示, 最後仍以圖為準)
+  ✓ 撥 GUIDED 高度 241 m (設計 240 m)
+  ✓ 推頭前航向誤差 +2.8°
+  ✓ 推頭用時 1.9 s
+  ⚠ 實際俯衝角 γ -24.6° 跟設計 −30° 差 5.4° → 看 pitch 追蹤 (Fig 2, Fig 7) / ALPHA_DIVE_DEG
+  ⚠ pitch 追蹤 RMSE 3.7° 偏大 → 飛控 pitch 迴路跟不上命令 (先調飛控, 不要先加 PID_LON 增益)
+  ✓ DIVE 最大空速 39.3 m/s
+  ✓ 橫向影像誤差 RMSE 1.1°
+  ⚠ 縱向影像誤差 RMSE 3.5°：後半段一直偏 +4.1° 沒收斂 → PID_LON_KI=0.1 可能不夠 或 pitch 追不上 (Fig 2, Fig 7)
+  ✓ 方向舵打滿 0 % 時間
+  ⚠ 拉平掉了 16 m 才停 (最低 124 m) → 考慮 PULLOUT_AGL_M 提高 16 m 或確認 TECS / pitch 上仰速度
+  ✓ 空速計 / GPS 速度 = 0.93
+  ✓ 控制迴路 50 Hz 正常
+
+【雲台資料當控制命令 (離線重放, Fig 5 / Fig 15)】
+  DIVE 段沒有任何雲台偵測
+
+【目標偵測對照 (Fig V1~V5; xwing_vision)】
+  控制來源: 虛擬軌跡 (--virtual-control, 偵測只記錄)
+  推頭依據 (偵測): angle  觸發角 30.0°  距離門檻 416 m  (--virtual-control 時實際推頭是看虛擬距離)
+  撥 GUIDED 後第一次看到目標: t = 8.52 s, 偵測水平距 548 m, 俯角 23.7°
+  看得到目標的比例 (能換算成角度): SEARCH 1%  PRE_DIVE 0%  DIVE 0%
+  雲台有看到目標 (vis_valid) 1%  /  能換算 (vg_valid) 1%  — 換算不了的原因: no_target 99%
+  實際推頭 (PRE_DIVE) t = 12.58 s: 偵測俯角 —, 偵測水平距 —, 虛擬水平距 416 m
+  角度判斷會推頭: 到實際推頭時都還沒達到條件 (會比實際晚推頭, 或不推頭)
+  距離判斷會推頭: 到實際推頭時都還沒達到條件 (會比實際晚推頭, 或不推頭)
+  沒有車子 BIN → 偵測位置只能跟虛擬目標比 (放進 xwing_plot/car_bin/ 才會跟真車比)
+  偵測位置 vs 虛擬目標 (SEARCH): 中位數 64 m; 沿路 -64 m, 橫向 -3 m  (= 真車與虛擬軌跡差多少 + 偵測誤差)
+  SEARCH 航向: 朝偵測目標 − 朝虛擬目標 中位數 +0.3°, |95%| 0.3°  (視覺控制時航向會差這麼多)
+  影像延遲 (取像→收到) 中位數 85 ms; 雲台 yaw − 飛控航向 中位數 +1.1°, 標準差 5.0°
+  雲台回報 yaw (原始值): 中位數 -0.0°, 範圍 -6.0° ~ +4.0°
+  ⚠ PRE_DIVE 只有 0% 看得到目標 — 正式模式連續 1.5 s 看不到就 ABORT
+  ⚠ DIVE 只有 0% 看得到目標 — 正式模式連續 1.5 s 看不到就 ABORT
+  ⚠ SEARCH 只有 1% 看得到目標 — 正式模式可能一直不推頭
+  ⚠ 雲台 yaw − 飛控航向 標準差 5.0° (不穩, 維持 GIMBAL_YAW_MODE=none)
+
+【events.txt (這趟)】
+  [   0.00] ★ GUIDED 上升沿 — 種點 + ARM (第 3 趟任務開始)
+  [   0.00] 切 GUIDED 時離目標起點 615 m
+  [   0.01] 種點(移動): 虛擬目標起點 NED=(0.0,0.0) 方位 0.0° 速度 10.0 m/s
+  [   0.01] TECS 目標預送 (背景) ALT=241m SPD=30m/s
+  [   0.01] 雲台狀態 → SEARCH: 模式鍵 '1'
+  [   0.02] 雲台回報模式 '1' 已確認 (要求後 0.00s)
+  [   0.04] TECS 目標預送完成 ALT=241m SPD=30m/s ok=(True,True)
+  [  12.58] ★★ MODE: SEARCH → PRE_DIVE (t=2134.9s AGL=239.8 V=30.4 看車俯角=— 偵測水平距=— 虛擬水平距=416m pitch_cmd=-30.0 hdg_cmd=0.8)
+  [  12.59] TECS 高度目標 → 140m (背景發送/PRE_DIVE)
+  [  12.59] 雲台狀態 → PRE_DIVE: 模式鍵 '2'
+  [  12.61] TECS 高度目標 → 140m 完成/PRE_DIVE ok=(True,True)
+  [  12.66] 雲台回報模式 '2' 已確認 (要求後 0.06s)
+  [  13.12] ★ 雲台鎖定到位 pitch=-28.6° (要求後 0.53s, 任務狀態 PRE_DIVE)
+  [  14.46] ★★ MODE: PRE_DIVE → DIVE (t=2136.8s AGL=232.5 V=27.2 看車俯角=— 偵測水平距=— 虛擬水平距=383m pitch_cmd=-30.0 hdg_cmd=0.9)
+  [  14.47] 雲台狀態 → DIVE: 模式鍵 '2'
+  [  19.62] ★★ MODE: DIVE → PULLOUT (t=2142.0s AGL=148.4 V=38.8 看車俯角=— 偵測水平距=— 虛擬水平距=259m pitch_cmd=+0.0 hdg_cmd=1.1)
+  [  19.63] TECS 高度目標 → 140m (背景發送/PULLOUT)
+  [  19.63] 雲台狀態 → PULLOUT: 模式鍵 不要求
+  [  19.63] ★★★ 成績: miss = 15.67 m (lon -11.72, lat +10.41) — 對虛擬目標
+  [  19.65] TECS 高度目標 → 140m 完成/PULLOUT ok=(True,True)
+  [  20.14] ★★ MODE: PULLOUT → DONE (t=2142.5s AGL=139.3 V=42.3 看車俯角=— 偵測水平距=— 虛擬水平距=244m pitch_cmd=+0.0 hdg_cmd=1.1)
+  [  20.14] 雲台狀態 → DONE: 模式鍵 '1'
+  [  20.20] 雲台回報模式 '1' 已確認 (要求後 0.04s)
+  [  21.94] ★ 離開 GUIDED (fc_mode=FBWA) — 第 3 趟 mode=DONE (1s 內沒回來就重置)
+  [  21.94] 雲台狀態 → STANDBY: 模式鍵 不要求
+  [  22.94] 任務重置 — 下次撥 GUIDED = 第 4 趟 (重新偵測目標; 虛擬目標回到起點)
