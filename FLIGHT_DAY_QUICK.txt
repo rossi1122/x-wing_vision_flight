@@ -210,6 +210,8 @@ MAVROS 連不上                         → 拔插飛控 USB, ls -l /dev/ttyACM
 ★★★ 飛控 (MAVROS) 資料中斷            → 程式收不到飛控 (11/18 台鴞那次): 不要撥 GUIDED;
                                         看 Terminal 1 有沒有錯誤 / 飛控 USB 有沒有鬆;
                                         重開 MAVROS 後也要重開飛行程式 (--case 換名字)
+                                        程式會自動存 flight_logs/<log 名>_fclost_N.txt
+                                        (當下的 USB / ttyACM kernel 訊息 + MAVROS 有沒有在跑), 一起帶回來
 撥 GUIDED 飛機直接繞圈 / 一直右轉       → 程式沒有在控制 (飛控 GUIDED 沒收到命令就繞圈):
                                         馬上切回 AUTO; 看 events 有沒有「GUIDED 上升沿」
 不啟動任務: 離目標起點 ... m           → 航點檔不是 S2N 版, 或撥 GUIDED 的位置不在 WP3 附近

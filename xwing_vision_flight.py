@@ -108,6 +108,39 @@ CSV_FIELDS += VISION_CSV_FIELDS      # 對方封包原始值 (與 xwing_virtual 
 FC_STALE_S = 1.0       # 飛控 (MAVROS) IMU 超過這麼久沒更新 = 飛控資料中斷 (見 MavrosIO)
 
 
+def save_fc_lost_snapshot(path, ttl_s=5.0):
+    """飛控資料中斷當下: 存 kernel 的 USB / tty (ttyACM = 飛控) 訊息 + 有沒有 MAVROS 在跑 (背景執行).
+    之後用來判斷是飛控 USB 斷線 / 重新列舉, 還是 MAVROS 自己停了."""
+    import re
+    import subprocess
+
+    def run():
+        key = re.compile(r'usb|tty|acm|cp210|serial|disconnect|enumerat|over-?current|mavros',
+                         re.IGNORECASE)
+        out = []
+        for cmd, filt in ((['journalctl', '-k', '-n', '5000', '--no-pager', '-o', 'short-iso'], True),
+                          (['dmesg', '-T'], True),
+                          (['ls', '-l', '/dev/serial/by-id/'], False),
+                          (['sh', '-c', 'ls -l /dev/ttyACM* 2>&1'], False),
+                          (['sh', '-c', 'ps -eo pid,etime,cmd | grep -i -E "mavros|roscore|rosmaster" '
+                                        '| grep -v grep'], False)):
+            try:
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=ttl_s)
+                lines = ((r.stdout or '') + (r.stderr or '')).splitlines()
+                if filt and r.returncode == 0:
+                    lines = [ln for ln in lines if key.search(ln)][-200:] or ['(沒有 USB / tty 相關的 kernel 訊息)']
+                out.append(f"$ {' '.join(cmd)}  (exit {r.returncode})\n" + '\n'.join(lines[-200:]))
+            except Exception as e:  # noqa: BLE001
+                out.append(f"$ {' '.join(cmd)}  失敗: {e}")
+        try:
+            with open(path, 'w') as f:
+                f.write(f"# {time.strftime('%Y-%m-%d %H:%M:%S')} 飛控 (MAVROS) 資料中斷當下\n\n"
+                        + '\n\n'.join(out) + '\n')
+        except OSError:
+            pass
+    threading.Thread(target=run, daemon=True).start()
+
+
 class MavrosIO:
     GPS_TIME_STALE_S = 5.0
     # ★ 2026/11/18 台鴞飛測: MAVROS 在開機 38 s 後整個停了, 程式整趟以為飛機在地上 / MANUAL,
@@ -822,6 +855,11 @@ def main():
                             f"不要撥 GUIDED, 檢查 Terminal 1 的 MAVROS / 飛控 USB")
                     print("\n" + "!" * 64 + "\n" + _msg + "\n" + "!" * 64, flush=True)
                     event(_msg)
+                    fc_wd['n'] = fc_wd.get('n', 0) + 1
+                    if fc_wd['n'] <= 3:
+                        _snap = os.path.join(log_dir, f"{stem}_fclost_{fc_wd['n']}.txt")
+                        save_fc_lost_snapshot(_snap)
+                        event(f"飛控資料中斷當下的 kernel / MAVROS 狀態 → {os.path.basename(_snap)}")
                 elif _fc_stale and t - fc_wd['report_t'] >= 30.0:
                     fc_wd['report_t'] = t
                     event(f"★★★ 飛控 (MAVROS) 資料仍然中斷 {t - fc_wd['t0']:.0f}s")
