@@ -121,7 +121,8 @@ class FakeIO:
                 'r_dps': AC['r'], 'nz_g': 1, 'fc_pitch_tgt_deg': None,
                 'fc_nav_pitch_deg': None, 'fc_nav_roll_deg': None,
                 'fc_nav_bearing_deg': None, 'fc_mode': 'GUIDED' if g else 'AUTO',
-                'batt_v': 16.4 - 0.004 * (CLK['t'] - T0), 'rcout': [1500] * 8}
+                'batt_v': 16.4 - 0.004 * (CLK['t'] - T0), 'rcout': [1500] * 8,
+                'fc_age_s': 0.02}
 class FakeBridge:
     def __init__(self, **k): pass
     def start(self): pass

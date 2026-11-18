@@ -73,7 +73,7 @@ NED_ORIGIN = None
 
 # ── 主 log 欄位 (50Hz 控制迴路, 逐拍) — 與 xwing_virtual 相同, 再加全視覺欄位 ──
 CSV_FIELDS = [
-    't', 'gps_unix', 'run', 'mode', 'guided', 'control',
+    't', 'gps_unix', 'fc_age_s', 'run', 'mode', 'guided', 'control',
     'ac_n', 'ac_e', 'agl', 'V', 'chi_deg', 'gamma_deg', 'theta_deg',
     'roll_deg', 'yaw_deg', 'vn', 've', 'vd', 'dt',
     # 虛擬目標 (帶路 / 對照)
@@ -105,8 +105,14 @@ CSV_FIELDS += VISION_CSV_FIELDS      # 對方封包原始值 (與 xwing_virtual 
 # ══════════════════════════════════════════════════════════════════
 #  MAVROS 訂閱 (= xwing_virtual_flight.MavrosIO, 加回取像時刻用的姿態歷史)
 # ══════════════════════════════════════════════════════════════════
+FC_STALE_S = 1.0       # 飛控 (MAVROS) IMU 超過這麼久沒更新 = 飛控資料中斷 (見 MavrosIO)
+
+
 class MavrosIO:
     GPS_TIME_STALE_S = 5.0
+    # ★ 2026/11/18 台鴞飛測: MAVROS 在開機 38 s 後整個停了, 程式整趟以為飛機在地上 / MANUAL,
+    #   撥 GUIDED 完全沒反應 (飛控 GUIDED 沒收到命令 → 預設繞圈, 看起來像「直接右轉」).
+    #   IMU (~50 Hz) 超過 FC_STALE_S (模組常數) 沒更新 = 飛控資料中斷.
 
     def __init__(self):
         self.lock = threading.Lock()
@@ -132,6 +138,7 @@ class MavrosIO:
         self.rcout = [None] * 8
         self.gps_unix_ref = None
         self.gps_rx_t = None
+        self.fc_rx_mono = None     # 最後一次收到 IMU 的時刻 (monotonic) — 飛控資料有沒有在更新
         # (roll, pitch, yaw, course) 依 IMU 收到時刻 (monotonic) — 視覺取像時刻查姿態
         self.pose_history = AngleHistory()
 
@@ -204,6 +211,7 @@ class MavrosIO:
 
     def _cb_imu(self, m):
         with self.lock:
+            self.fc_rx_mono = time.monotonic()
             self.yaw_rate_dps = -math.degrees(m.angular_velocity.z)
             self.p_dps = math.degrees(m.angular_velocity.x)
             self.q_dps = -math.degrees(m.angular_velocity.y)
@@ -249,6 +257,9 @@ class MavrosIO:
                              if age <= self.GPS_TIME_STALE_S else None)
         else:
             d['gps_unix'] = None
+        # 飛控資料年齡 (s); 從沒收過 = None
+        d['fc_age_s'] = (time.monotonic() - d['fc_rx_mono']
+                         if d.get('fc_rx_mono') is not None else None)
         return d
 
 
@@ -566,6 +577,7 @@ def main():
     vis_down = False
     gim_logged = (None, None, None)
     vis_check_t = 0.0
+    fc_wd = {'down': False, 't0': None, 'report_t': 0.0}   # 飛控 (MAVROS) 資料中斷看門狗
     scored = {'done': False}
     _miss_warned = False
     pid_last_t = None
@@ -574,6 +586,9 @@ def main():
 
     def arm_check(s):
         """撥 GUIDED 時能不能開始任務 (= xwing_virtual). None = 可以; 否則 = 拒絕原因."""
+        _fa = s.get('fc_age_s')
+        if _fa is not None and _fa > FC_STALE_S:
+            return f"飛控 (MAVROS) 資料已經 {_fa:.1f}s 沒更新, 程式不知道飛機狀態"
         if args.bench or args.ground_test:
             return None
         agl = s['rel_alt']
@@ -796,6 +811,25 @@ def main():
                             event(f"★ 雲台鎖定到位 pitch={_tm['pitch_settled']:.1f}° "
                                   f"(要求後 {_tm['t_settled'] - _tm['t_req']:.2f}s, "
                                   f"任務狀態 {_gstate})")
+                # ── 飛控 (MAVROS) 資料中斷看門狗 ──
+                _fa = s.get('fc_age_s')
+                _fc_stale = _fa is not None and _fa > FC_STALE_S
+                if _fc_stale and not fc_wd['down']:
+                    fc_wd.update(down=True, t0=t - _fa, report_t=t)
+                    _msg = (f"★★★ 飛控 (MAVROS) 資料中斷: {_fa:.1f}s 沒收到飛控資料 "
+                            f"(最後: 模式 {s.get('fc_mode') or '?'}, AGL {s.get('rel_alt')}) — "
+                            f"程式不知道飛機狀態, 撥 GUIDED 不會有反應 (飛控沒收到命令會自己繞圈); "
+                            f"不要撥 GUIDED, 檢查 Terminal 1 的 MAVROS / 飛控 USB")
+                    print("\n" + "!" * 64 + "\n" + _msg + "\n" + "!" * 64, flush=True)
+                    event(_msg)
+                elif _fc_stale and t - fc_wd['report_t'] >= 30.0:
+                    fc_wd['report_t'] = t
+                    event(f"★★★ 飛控 (MAVROS) 資料仍然中斷 {t - fc_wd['t0']:.0f}s")
+                    print(f"★★★ 飛控 (MAVROS) 資料仍然中斷 {t - fc_wd['t0']:.0f}s", flush=True)
+                elif not _fc_stale and fc_wd['down'] and _fa is not None:
+                    fc_wd['down'] = False
+                    event(f"飛控 (MAVROS) 資料恢復 (中斷 {t - fc_wd['t0']:.1f}s)")
+
                 if vision is not None and t - vis_check_t >= 1.0:
                     vis_check_t = t
                     _age = (_mono - _vpkt['rx_mono']) if _vpkt else None
@@ -858,6 +892,7 @@ def main():
                 row = {
                     't': round(t, 3),
                     'gps_unix': (f"{s['gps_unix']:.3f}" if s['gps_unix'] is not None else ''),
+                    'fc_age_s': (round(s['fc_age_s'], 3) if s.get('fc_age_s') is not None else ''),
                     'run': run_idx,
                     'mode': out['mode'], 'guided': int(s['guided']),
                     'control': 'vision' if use_vision else 'virtual',
@@ -935,7 +970,8 @@ def main():
                                f"gmode={_vrow['vis_gimbal_mode'] if _vrow['vis_gimbal_mode'] != '' else '-'}"
                                f"(req {_vrow['gimbal_mode_req'] or '-'}) "
                                f"gpitch={_vrow['vis_gimbal_pitch'] if _vrow['vis_gimbal_pitch'] != '' else '-'}")
-                    print(f"[{out['mode']:8s}] t={t:6.1f} AGL={agl or 0:6.1f} "
+                    print((f"★★★FC資料停{s['fc_age_s']:.0f}s★★★ " if _fc_stale else "")
+                          + f"[{out['mode']:8s}] t={t:6.1f} AGL={agl or 0:6.1f} "
                           f"V={V:5.1f} 虛擬={vfields['ground_m']:6.0f}m "
                           f"pitch={out['pitch_cmd_deg']:+6.1f} "
                           f"hdg={out['heading_cmd_deg']:6.1f} g={int(s['guided'])}"

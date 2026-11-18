@@ -384,7 +384,7 @@ def test_sim():
 # 4. 實飛主程式 (假 ROS)
 # ══════════════════════════════════════════════════════════════════
 def run_flight(script, car_present=True, link_ok_from=0.0, case='vtest', stop_at=60.0,
-               bench=False):
+               bench=False, fc_freeze_at=None):
     """bench=True: 飛機放在地上 (高度 0.3 m, 不動) + --bench --bench-dive;
     假雲台看著正前方的標記, 每秒往下多看 1° (20° → 40°)."""
     """跑一次 xwing_vision_flight.main(). script = [(t_rel, guided), ...]."""
@@ -507,7 +507,10 @@ def run_flight(script, car_present=True, link_ok_from=0.0, case='vtest', stop_at
                     'r_dps': 0, 'nz_g': 1, 'fc_pitch_tgt_deg': None,
                     'fc_nav_pitch_deg': None, 'fc_nav_roll_deg': None,
                     'fc_nav_bearing_deg': None, 'fc_mode': 'GUIDED' if g else 'AUTO',
-                    'batt_v': 16.0, 'rcout': [1500] * 8}
+                    'batt_v': 16.0, 'rcout': [1500] * 8,
+                    # fc_freeze_at: 之後飛控資料年齡一直變大 (模擬 MAVROS 斷掉)
+                    'fc_age_s': (max(0.02, clk['t'] - T0 - fc_freeze_at)
+                                 if fc_freeze_at is not None else 0.02)}
 
     class FakeBridge:
         def __init__(self, **k):
@@ -636,6 +639,17 @@ def test_flight():
     srch = [r for r in rows if r['mode'] == 'SEARCH' and r['guided'] in ('1', 'True')]
     check(srch and all(r['vg_valid'] == '1' and r['vg_geom'] == 'angle' for r in srch[5:]),
           "掛機: SEARCH 每拍都看得到 (vg_geom = angle)")
+
+    # 11/18 台鴞飛測: MAVROS 中途斷掉 → 一定要警告, 撥 GUIDED 不啟動任務
+    text, rows = run_flight([(5.0, True)], case='vtest_fcstale', stop_at=12.0, fc_freeze_at=1.0)
+    check('★★★ 飛控 (MAVROS) 資料中斷' in text, "MAVROS 資料停了 > 1 s → events 記 ★★★ 飛控資料中斷")
+    check('不啟動任務: 飛控 (MAVROS) 資料' in text and '第 1 趟任務開始' not in text,
+          "MAVROS 資料停了時撥 GUIDED → 不啟動任務 (原因寫飛控資料中斷)")
+    check(rows and rows[-1]['fc_age_s'] != '' and float(rows[-1]['fc_age_s']) > 10,
+          f"CSV fc_age_s 記錄飛控資料年齡 (最後 {rows[-1]['fc_age_s'] if rows else '?'} s)")
+    text, rows = run_flight([(2.0, True)], case='vtest_fcok', stop_at=5.0)
+    check('飛控 (MAVROS) 資料中斷' not in text and all(float(r['fc_age_s']) < 1 for r in rows),
+          "飛控資料正常時不會誤報")
 
     text, rows = run_flight([(2.0, True)], car_present=False, case='vtest_nocar',
                             stop_at=30.0)

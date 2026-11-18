@@ -548,7 +548,16 @@ def summarise(R, d, car, info, st):
                 f't {x0:.1f}~{x1:.1f} s 要求 {rq} 回報 {gt} ({md or "非 GUIDED"})'
                 for x0, x1, rq, gt, md in segs))
 
+    # 飛控 (MAVROS) 資料年齡 (2026/11/18 起的 log 才有 fc_age_s)
+    if 'fc_age_s' in L.cols:
+        fa = L.num('fc_age_s')
+        if np.isfinite(fa).any():
+            st['fc_age_max'] = float(np.nanmax(fa))
+            nums.append(f'飛控 (MAVROS) 資料年齡: 最大 {st["fc_age_max"]:.2f} s')
+
     # ── 自動檢查 ──
+    if st.get('fc_age_max') is not None and st['fc_age_max'] > 1.0:
+        chk.append(f'✗ 飛控 (MAVROS) 資料中斷過, 最長 {st["fc_age_max"]:.1f} s — 這段時間程式不知道飛機狀態')
     if st.get('pitch_nan') is not None and st['pitch_nan'] > 50:
         chk.append(f'✗ 雲台回報的 pitch 有 {st["pitch_nan"]:.0f}% 是 NaN (角度無效) — 偵測沒辦法換算成角度 / 距離; '
                    '請對方確認雲台角度有輸出 (uart_mipi_receiver 的「雲台 Pitch 角度」不能是 N/A)')
