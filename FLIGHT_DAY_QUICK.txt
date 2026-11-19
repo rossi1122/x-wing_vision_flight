@@ -31,7 +31,7 @@ python3 test_vision_guidance.py
 cd xwing_plot && python3 test_plot_report.py --vision && cd ..
     沒有套件: pip3 install pyserial numpy matplotlib
 
-# 確認虛擬軌跡 = 新航線 (要看到 23.7287278 和 23.7298417):
+# 確認虛擬軌跡 = 新航線 (要看到 23.728023 和 23.7291369):
 grep -n "MOVING_START_GPS\|MOVING_HEADING_GPS" xwing_vision_config.py
 
 # (鏡頭修好後, 正式模式飛之前做一次) 地面校正雲台角度 — 只接雲台, 不用 ROS:
@@ -42,9 +42,9 @@ python3 gimbal_calib.py --distance 40 --height 1.2   # 標記在地上 (距離 4
 #   再跑一次確認「量到 − 真實」≈ 0. 偏差 > 5° 通常是擺錯, 不要照填.
 
 # 任務航點檔 (Mission Planner 載入, 跟虛擬軌跡配套):
-    xwing_vision_mission_S2N_20261110.waypoints   (= B 的 xwing_virtual_mission_S2N_20261110.waypoints)
-    WP2 轉彎點 (左轉往北) → 401 m → WP3 23.7235958, 120.3798693 (撥 GUIDED)
-    → 571 m → WP4 23.7287278, 120.3798473 (虛擬目標起點, 往北 0°)
+    ★ xwing_vision_mission_S2N_20261119.waypoints   (11/19 版; 不要載到 20261110 那個舊檔)
+    WP2 轉彎點 23.7192913, 120.3799115 (左轉往北) → 401 m → WP3 23.7228910, 120.3798960 (撥 GUIDED)
+    → 571 m → WP4 23.728023, 120.379874 (虛擬目標起點, 往北 0°)
     起飛 / 降落航點照平常自己加在前後.
 
 
@@ -99,14 +99,14 @@ python3 xwing_vision_flight.py --case flight1 2>&1 | tee console_flight1.txt
 
 開好要看到:
     [xwing] 目標來源: 虛擬軌跡 (偵測只記錄)          ← 正式模式是「★ 目標偵測」
-    [xwing] 虛擬目標 (控制): 起點 (23.7287278, 120.3798473) 方位 0.0° 速度 10.0 m/s
+    [xwing] 虛擬目標 (控制): 起點 (23.728023, 120.379874) 方位 0.0° 速度 10.0 m/s
     [xwing] 推頭門檻: 到虛擬目標水平距 ≤ 416 m        ← 正式模式是「看車俯角 ≥ 30.0° (不用高度)」
     [xwing] 雲台 yaw 用法: GIMBAL_YAW_MODE='none'
     [UARTVision] 已開啟 /dev/serial/by-id/usb-Silicon_Labs_CP2102...
     [Bridge] 串流率設定完成 6/6
     每秒一行 [SEARCH  ] ... | VIS link=1 det=? dep=... dist=... gmode=...
 
-    方位 180.0° 或起點 23.7222419 → 不是新航線, 不要飛
+    方位 180.0° 或起點不是 23.728023 (例 23.7287278 / 23.7222419) → 不是新航線, 不要飛
     出現 ★★★ → 不要飛
 
 ★ 飛控資料有沒有在更新 (11/18 台鴞那次 MAVROS 開機 38 s 就停了, 整趟撥 GUIDED 都沒反應):
@@ -120,11 +120,12 @@ python3 xwing_vision_flight.py --case flight1 2>&1 | tee console_flight1.txt
 ------------------------------------------------------------------
  5. 飛行中
 ------------------------------------------------------------------
-一趟的順序 (同 B 的 xwing_virtual_ROUTE_S2N_20261110.md):
+一趟的順序 (同 B 的 xwing_virtual_ROUTE_S2N_20261110.md, 座標換成 11/19 版):
   1) AUTO 240 m, 先繞一圈不切 GUIDED: 確認 WP2 左轉後對正往北、狀態列 VIS link=1、
      ★ 狀態列 AGL ≈ 240 (飛控資料有在更新, 不是 0)、最前面沒有 ★★★FC資料停
-  2) WP1→WP2 (南邊往東), 離 WP2 約 150 m → 喊車子出發
-       (車停 WP4 南方約 50 m ≈ 23.7282786, 120.3798473, 車頭朝北)
+  2) WP1→WP2 (南邊往東), 離 WP2 約 150 m (≈ 23.7192913, 120.3784397) → 喊車子出發, 立刻全力開
+       (車停 WP4 南方約 50 m ≈ 23.7275738, 120.379874, 車頭朝北;
+        能準時出發的話停 20 m ≈ 23.7278433, 120.379874 更接近虛擬目標)
   3) WP2 左轉往北, 對正
   4) 到 WP3 → 地面站 Set Mode GUIDED (數傳延遲 0.5~1 s, 可稍提早)
 

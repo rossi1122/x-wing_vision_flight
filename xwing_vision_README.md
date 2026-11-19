@@ -21,11 +21,13 @@
 **還沒偵測到過車** (剛撥 GUIDED) 時，目標位置先用虛擬目標 (WP4) 帶路，
 但距離、畫面位置、有效旗標一律來自偵測，所以**沒看到車就不會推頭**。
 
-### 航線 (2026/11/10 = B 最新版, 由南往北)
-- 虛擬目標起點 = 新 WP4 **(23.7287278, 120.3798473)** (東北角路口南 250 m)，往**北** (0.0°)，10 m/s。
-- 撥 GUIDED = WP3 (23.7235958, 120.3798693)，在 WP4 南方 571 m。
-- 航點檔、真車位置與叫車時機請用 B 的 `xwing_virtual_mission_S2N_20261110.waypoints`
-  與 `xwing_virtual_ROUTE_S2N_20261110.md` (hsu_realflight_true, 分支 `claude/kind-clarke-r77kuq`)。
+### 航線 (2026/11/19, 由南往北)
+- 虛擬目標起點 = 新 WP4 **(23.728023, 120.379874)**，往**北** (0.0°)，10 m/s。
+- 撥 GUIDED = WP3 (23.7228910, 120.3798960)，在 WP4 南方 571 m。
+- 航點檔：`xwing_vision_mission_S2N_20261119.waypoints` (= 11/10 版整條往南 78.5 m、往東 2.7 m，距離 / 時機都不變)。
+- 叫車：飛機在 WP1→WP2 離 WP2 約 150 m (≈ 23.7192913, 120.3784397) 時；
+  車停 WP4 南方約 50 m (≈ 23.7275738, 120.379874)，車頭朝北 (能準時出發的話停 20 m ≈ 23.7278433, 120.379874 更接近虛擬目標)。
+- 11/10 版 (= B)：起點 (23.7287278, 120.3798473)，航點檔 `xwing_vision_mission_S2N_20261110.waypoints`。
 - 舊版 (11/01~11/04, 由北往南)：起點 (23.7222419, 120.3798848)，往南 180.0°。
 
 ### 流程 (同 xwing_virtual)
@@ -136,7 +138,8 @@ SEARCH 段原本就沒有逾時：一直沒看到車就不會推頭，**由駕�
 | `gimbal_calib.py` | 新增 | 地面校正雲台俯角 / 方位，印出 config 建議值 |
 
 | `FLIGHT_DAY_QUICK.txt` | 新增 | ★ 飛測日照順序操作的指令與檢查 |
-| `xwing_vision_mission_S2N_20261110.waypoints` | = B | 11/10 由南往北任務航點 (Mission Planner 載入) |
+| `xwing_vision_mission_S2N_20261119.waypoints` | 新增 | ★ 11/19 任務航點 (起點 23.728023, 120.379874；Mission Planner 載入) |
+| `xwing_vision_mission_S2N_20261110.waypoints` | = B | 11/10 由南往北任務航點 (舊) |
 | `test_records/` | 新增 | 測試紀錄 (每次一個資料夾: log 原檔 + `測試紀錄.md`)；索引見 `test_records/README.md` |
 | `xwing_plot/` | 從 B 複製並改成讀 xwing_vision log | 飛完畫圖：Fig 1~15 (同 B) + **Fig V1~V5 目標偵測對照** (`xwing_plot_vision.py`)；說明見 `xwing_plot/PLOT_GUIDE.md` |
 
