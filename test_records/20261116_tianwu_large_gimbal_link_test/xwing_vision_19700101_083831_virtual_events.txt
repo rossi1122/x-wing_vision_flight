@@ -1,0 +1,25 @@
+    0.00s  xwing_vision: 目標來源=虛擬軌跡 巡航 240m/30m/s 俯衝 30° 拉平 140m Vmax 60m/s 推頭: 到虛擬目標水平距 ≤ 416 m
+    0.01s  DIVE 方向舵: 方向舵 PID (版本 A); 空速排程 RUDDER_VSCHED=((999.0, 1.0),)
+    0.01s  虛擬目標 (控制) 移動 起點 (23.7287278, 120.3798473) 方位 0.0° 速度 10.0 m/s
+    0.01s  雲台視覺 UART: /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0 @ 115200; 模式鍵 ON {'STANDBY': None, 'SEARCH': '1', 'PRE_DIVE': '2', 'DIVE': '2', 'PULLOUT': None, 'DONE': '1', 'ABORT': None}
+    0.02s  [UARTVision] 傳輸診斷 → xwing_vision_19700101_083831_virtual_uart_raw.bin / _uart_health.csv
+    0.18s  雲台狀態 → STANDBY: 模式鍵 不要求
+   18.96s  ★ GUIDED 上升沿 — 種點 + ARM (第 1 趟任務開始)
+   18.96s  切 GUIDED 時離目標起點 83151 m
+   18.96s  種點(移動): 虛擬目標起點 NED=(0.0,0.0) 方位 0.0° 速度 10.0 m/s
+   18.96s  TECS 目標預送 (背景) ALT=240m SPD=30m/s
+   18.96s  雲台狀態 → SEARCH: 模式鍵 '1'
+   18.98s  TECS 目標預送完成 ALT=240m SPD=30m/s ok=(True,True)
+   19.32s  雲台回報模式 '1' 已確認 (要求後 0.34s)
+   69.80s  ★ 離開 GUIDED (fc_mode=MANUAL) — 第 1 趟 mode=SEARCH (1s 內沒回來就重置)
+   69.80s  雲台狀態 → STANDBY: 模式鍵 不要求
+   70.82s  任務重置 — 下次撥 GUIDED = 第 2 趟 (重新偵測目標; 虛擬目標回到起點)
+   80.76s  ★ GUIDED 上升沿 — 種點 + ARM (第 2 趟任務開始)
+   80.76s  切 GUIDED 時離目標起點 83152 m
+   80.76s  種點(移動): 虛擬目標起點 NED=(0.0,0.0) 方位 0.0° 速度 10.0 m/s
+   80.76s  TECS 目標預送 (背景) ALT=240m SPD=30m/s
+   80.76s  雲台狀態 → SEARCH: 模式鍵 '1'
+   80.78s  雲台回報模式 '1' 已確認 (要求後 0.00s)
+   80.78s  TECS 目標預送完成 ALT=240m SPD=30m/s ok=(True,True)
+  110.13s  雲台視覺 UART 統計: {'frames': 3318, 'clock': 56, 'bytes': 290800, 'header': 0, 'crc': 0, 'payload': 0, 'discarded': 6, 'reopen': 0, 'mode_tx': 1, 'serial_err': 0, 'open_fail': 0, 'tx_bytes': 1009, 'rx_gaps': 0}
+  110.13s  程式結束 mode=SEARCH errors=0 時長 110.1s

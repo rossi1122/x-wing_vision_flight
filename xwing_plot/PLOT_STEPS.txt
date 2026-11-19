@@ -1,0 +1,135 @@
+X-wing 飛完畫圖 — 在筆電 (Windows) 上的執行步驟
+詳細說明 (每張圖看什麼、自動檢查門檻): PLOT_GUIDE.md (同一個資料夾)
+
+畫圖的東西全部在專案的 xwing_plot 資料夾:
+  x-wing_vision_flight\                    ← 整個專案 (飛行程式、config 都在這層)
+    flight_logs\                     ← 飛機的 log (從 Orin 拷過來, 放這裡)
+    xwing_plot\                      ← ★ 畫圖都在這裡做
+      xwing_plot_report.py           主程式 (出全部的圖)
+      xwing_plot_target_gps.py       虛擬目標 vs 真車 (主程式會自動呼叫)
+      test_plot_report.py            不用飛機的測試
+      car_bin\                       ← 車子的 .BIN 放這裡 (有放就自動比對)
+      plot_results\                  ← 畫出來的圖 (自動產生)
+※ 畫圖會用到上一層的 xwing_vision_config.py / dive_guidance.py,
+  所以要拷「整個專案」, 不能只拷 xwing_plot 資料夾.
+
+==================================================================
+ A. 第一次準備 (只做一次, 已完成可跳過)
+==================================================================
+1. 安裝 Python: https://www.python.org/downloads/
+   安裝時勾 "Add python.exe to PATH"
+   確認: 開「命令提示字元」輸入   python --version   → 出現 Python 3.x.x
+
+2. 安裝套件 (需要網路):
+   python -m pip install numpy matplotlib
+   確認: python -c "import numpy, matplotlib; print('OK')"   → 出現 OK
+
+3. 專案放到筆電桌面, 例如 C:\Users\user\Desktop\x-wing_vision_flight
+   方法 1: GitHub → 分支 claude/funny-gates-j8j7f7 → Code → Download ZIP → 解壓到桌面
+   方法 2: Orin 用隨身碟拷整個 ~/catkin_ws/src/x-wing_vision_flight 資料夾
+           cd ~/catkin_ws/src/x-wing_vision_flight
+           git pull
+           ls /media/$USER/                       ← 看隨身碟名稱
+           cp -r ~/catkin_ws/src/x-wing_vision_flight /media/$USER/<隨身碟名稱>/
+           sync                                    ← 跑完再拔
+
+4. 測試 (不用飛機):
+   檔案總管打開 x-wing_vision_flight\xwing_plot → 點上方路徑列 → 輸入 cmd → Enter
+   python test_plot_report.py --vision
+   最後出現 [test] 完成 → 打開 xwing_plot\plot_results\...\run1\report.pdf
+
+
+==================================================================
+ B. 實飛當天 落地後
+==================================================================
+1. Orin Terminal 2: 輸入 q 按 Enter (結束飛行程式, log 才會存完整)
+
+2. 飛機的 log → 筆電 x-wing_vision_flight\flight_logs\ (覆蓋舊的)
+   Orin 終端機:
+   cp -r ~/catkin_ws/src/x-wing_vision_flight/flight_logs /media/$USER/<隨身碟名稱>/
+   sync
+
+3. (要比對真車才做) 車子飛控 SD 卡 → LOGS\ 裡「當天」的 .BIN
+   → 放到 x-wing_vision_flight\xwing_plot\car_bin\ (沒有這個資料夾就自己新建)
+   ※ 只放當天的 BIN, 程式會用 GPS 時間自己挑對的那一個
+   ※ car_bin 裡有 BIN 就會自動比對真車, 不用另外加參數
+
+4. 打開命令列: 檔案總管進 x-wing_vision_flight\xwing_plot → 路徑列輸入 cmd → Enter
+
+5. 畫圖:
+
+   ★ 全部一次畫 (最簡單, 建議用這個):
+   python xwing_plot_report.py --all
+     flight_logs 裡每一份、每一趟都畫, 最後印「總表」
+     沒切 GUIDED 的 (地面測試) 會自動跳過
+
+   只畫最新那份:
+   python xwing_plot_report.py --latest
+
+   只畫指定的幾份 (先 dir ..\flight_logs 看檔名):
+   python xwing_plot_report.py xwing_vision_XXXXXXXX_XXXXXX_flight1.csv xwing_vision_XXXXXXXX_XXXXXX_flight2.csv
+     (只打檔名就好, 程式會去 flight_logs 找)
+
+   其他選項:
+   --no-car    car_bin 裡有 BIN 也不比對真車
+   --run 2     只畫第 2 趟 (同一份 log 切了好幾次 GUIDED)
+   --full      地面測試 / 沒切 GUIDED: 整份畫出來
+
+6. 看結果: x-wing_vision_flight\xwing_plot\plot_results\<log 檔名>\run1\
+   report.pdf     ← 全部的圖, 直接開給老師看
+   summary.txt    ← 時間線 + 數字 + 自動檢查
+                    ✓ 正常   ⚠ 建議看的參數   ✗ 有問題
+   fig1 ~ fig15   ← 單張圖 (要放投影片用這些)
+   figV1 ~ figV5  ← 目標偵測對照 (xwing_vision 的 log 才有)
+   切了幾次 GUIDED 就有幾個資料夾: run1, run2, ...
+
+
+==================================================================
+ C. 圖在看什麼 (時間 0 = 撥 GUIDED)
+==================================================================
+── Fig 1~9: 照學長的版面 (論文用) ──
+Fig 1  影像誤差 (DIVE, 半個畫面 %)                 → PID_LAT / PID_LON
+Fig 2  姿態: pitch、航向 (相對進 DIVE 方位)、roll
+Fig 3  高度剖面: (a) 高度 vs 時間 (b) 慣性座標側視 + 理想 30° 線 (c) 到目標距離
+Fig 4  下滑角: γ vs −30°、誤差               Fig 4b 雲台偵測率長條圖 (有雲台)
+Fig 5  PID 重放: 虛擬目標 vs 雲台資料, 重算的航向 / pitch 命令 (有雲台)
+Fig 6  空速 + 各階段統計表
+Fig 7  控制迴路誤差
+Fig 8  雲台 pitch / roll / 模式 (有雲台); v8 多 (d) 雷射距離
+Fig 9  DIVE 俯視軌跡
+── Fig 10~15: X-wing 才有的診斷圖 ──
+Fig 10 方向舵: 舵量、限幅、被 roll 保護限制     → K_LAT_TO_RUDDER、ROLL_PROT
+Fig 11 PID 各項 P / I / D
+Fig 12 預測落點誤差 (DIVE)
+Fig 13 電壓、控制迴路 50 Hz
+Fig 14 虛擬目標 vs 真車 GPS (car_bin 有 BIN 才有)
+Fig 15 雲台 vs 虛擬 vs 真車 拆解 (有雲台; car_bin 有 BIN 才分得出誤差來源)
+── Fig V1~V5: 這個專案 (xwing_vision) 才有的「目標偵測」對照 ──
+Fig V1 看車俯角 vs 推頭: 偵測到的俯角、觸發角 30°、實際推頭時刻、
+       「角度判斷 / 距離判斷 會在什麼時候推頭」; 下半: 偵測水平距 vs 虛擬 vs 真車
+Fig V2 地圖: 飛機航跡、虛擬目標、偵測到的目標位置、真車 (東西向放大, 不等比例)
+Fig V3 偵測位置誤差: 對真車 (有 BIN) / 對虛擬目標, 拆成沿路 (俯角) 與橫向 (方位)
+Fig V4 航向: 實際航向命令 vs「朝偵測目標」的航向 (視覺控制時會差多少)
+Fig V5 偵測與資料鏈: 看不看得到、延遲、雲台 yaw − 飛控航向
+       summary.txt 的【目標偵測對照】段落: 推頭時機比較、偵測準不準、
+       有真車時直接寫「GIMBAL_PITCH_OFFSET_DEG / GIMBAL_YAW_OFFSET_DEG 建議加多少」
+       summary.txt 的【雲台資料當控制命令】段落有判斷
+
+
+==================================================================
+ D. 出問題時
+==================================================================
+'python' 不是內部或外部命令 / 跳出 Microsoft Store
+    → 安裝時沒勾 PATH: 改用 py 取代 python, 或重裝 Python 勾 PATH
+No module named numpy / matplotlib
+    → python -m pip install numpy matplotlib
+找不到 log / 沒有 xwing_vision_*.csv
+    → flight_logs 要放在 x-wing_vision_flight\flight_logs (專案那層, 不是 xwing_plot 裡)
+      或放成 flight_logs\flight_logs 了
+can't open file 'xwing_plot_report.py'
+    → 命令列不在 xwing_plot 資料夾: 重新從 xwing_plot 的路徑列輸入 cmd
+這份 log 沒有任何 GUIDED 段
+    → 地面測試 / 沒切 GUIDED: 加 --full
+Fig 14 沒畫 (summary.txt 會寫原因)
+    → car_bin 放錯天的 BIN / 放了兩個都涵蓋的 BIN / 那一趟沒進 DIVE
+其他錯誤 → 把整個畫面拍下來

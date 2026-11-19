@@ -1,0 +1,142 @@
+    0.00s  xwing_vision: 目標來源=虛擬軌跡 巡航 240m/30m/s 俯衝 30° 拉平 140m Vmax 60m/s 推頭: 到虛擬目標水平距 ≤ 416 m
+    0.00s  DIVE 方向舵: 方向舵 PID (版本 A); 空速排程 RUDDER_VSCHED=((999.0, 1.0),)
+    0.00s  虛擬目標 (控制) 移動 起點 (23.7287278, 120.3798473) 方位 0.0° 速度 10.0 m/s
+    0.01s  雲台視覺 UART: /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0 @ 115200; 模式鍵 ON {'STANDBY': None, 'SEARCH': '1', 'PRE_DIVE': '2', 'DIVE': '2', 'PULLOUT': None, 'DONE': '1', 'ABORT': None}
+    0.01s  [UARTVision] 傳輸診斷 → xwing_vision_19700104_022649_virtual_uart_raw.bin / _uart_health.csv
+    0.17s  雲台狀態 → STANDBY: 模式鍵 不要求
+  255.02s  [UARTVision] ★★ RX 斷線: 2.0s 沒收到任何 byte (埠 存在, 串口 開著, 累計 RX 696882 / TX 2304 bytes, 驅動 rx=0 frame=0 brk=0 overrun=0, 最後封包 id=6303)
+  255.69s  ★★ 雲台視覺資料鏈中斷: 2.7s 沒收到有效封包 (串口 /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0 已開啟, 收 696882 bytes, CRC 錯 0, 串口錯 0) ← 控制不受影響
+  260.37s  [UARTVision] RX 恢復: 中斷 7.4s, 期間 TX 送出 54 bytes
+  260.73s  雲台視覺資料鏈恢復
+ 1433.54s  [UARTVision] ★ 串口錯誤: read failed: device reports readiness to read but returned no data (device disconnected or multiple access on port?) → 關閉後重開
+ 1433.56s  [UARTVision] ★ 開不了 /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0: [Errno 2] could not open port /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0: [Errno 2] No such file or directory: '/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0' (第 1 次, 每 1 s 重試)
+ 1434.58s  [UARTVision] 已開啟 /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0 @ 115200 8N1 (失敗 1 次後恢復)
+ 1648.77s  ★ GUIDED 上升沿 — 種點 + ARM (第 1 趟任務開始)
+ 1648.77s  切 GUIDED 時離目標起點 641 m
+ 1648.78s  種點(移動): 虛擬目標起點 NED=(0.0,0.0) 方位 0.0° 速度 10.0 m/s
+ 1648.78s  TECS 目標預送 (背景) ALT=238m SPD=30m/s
+ 1648.79s  雲台狀態 → SEARCH: 模式鍵 '1'
+ 1648.80s  TECS 目標預送完成 ALT=238m SPD=30m/s ok=(True,True)
+ 1648.83s  雲台回報模式 '1' 已確認 (要求後 0.03s)
+ 1662.39s  ★★ MODE: SEARCH → PRE_DIVE (t=1662.4s AGL=237.0 V=30.4 看車俯角=— 偵測水平距=— 虛擬水平距=415m pitch_cmd=-30.0 hdg_cmd=1.7)
+ 1662.40s  TECS 高度目標 → 140m (背景發送/PRE_DIVE)
+ 1662.40s  雲台狀態 → PRE_DIVE: 模式鍵 '2'
+ 1662.42s  TECS 高度目標 → 140m 完成/PRE_DIVE ok=(True,True)
+ 1662.45s  雲台回報模式 '2' 已確認 (要求後 0.05s)
+ 1662.93s  ★ 雲台鎖定到位 pitch=-28.3° (要求後 0.52s, 任務狀態 PRE_DIVE)
+ 1664.19s  ★★ MODE: PRE_DIVE → DIVE (t=1664.2s AGL=229.5 V=27.7 看車俯角=— 偵測水平距=— 虛擬水平距=386m pitch_cmd=-30.0 hdg_cmd=1.9)
+ 1664.19s  雲台狀態 → DIVE: 模式鍵 '2'
+ 1668.99s  ★★ MODE: DIVE → PULLOUT (t=1669.0s AGL=147.9 V=36.5 看車俯角=— 偵測水平距=— 虛擬水平距=278m pitch_cmd=+0.0 hdg_cmd=2.3)
+ 1668.99s  TECS 高度目標 → 140m (背景發送/PULLOUT)
+ 1669.00s  雲台狀態 → PULLOUT: 模式鍵 不要求
+ 1669.00s  ★★★ 成績: miss = 49.07 m (lon -47.88, lat -10.78) — 對虛擬目標
+ 1669.02s  TECS 高度目標 → 140m 完成/PULLOUT ok=(True,True)
+ 1669.51s  ★★ MODE: PULLOUT → DONE (t=1669.5s AGL=139.1 V=37.1 看車俯角=— 偵測水平距=— 虛擬水平距=264m pitch_cmd=+0.0 hdg_cmd=2.3)
+ 1669.51s  雲台狀態 → DONE: 模式鍵 '1'
+ 1669.59s  雲台回報模式 '1' 已確認 (要求後 0.07s)
+ 1674.29s  ★ 離開 GUIDED (fc_mode=FBWA) — 第 1 趟 mode=DONE (1s 內沒回來就重置)
+ 1674.29s  雲台狀態 → STANDBY: 模式鍵 不要求
+ 1675.31s  任務重置 — 下次撥 GUIDED = 第 2 趟 (重新偵測目標; 虛擬目標回到起點)
+ 1930.73s  ★ GUIDED 上升沿 — 種點 + ARM (第 2 趟任務開始)
+ 1930.73s  切 GUIDED 時離目標起點 669 m
+ 1930.74s  種點(移動): 虛擬目標起點 NED=(0.0,0.0) 方位 0.0° 速度 10.0 m/s
+ 1930.74s  TECS 目標預送 (背景) ALT=239m SPD=30m/s
+ 1930.74s  雲台狀態 → SEARCH: 模式鍵 '1'
+ 1930.75s  雲台回報模式 '1' 已確認 (要求後 0.00s)
+ 1930.76s  TECS 目標預送完成 ALT=239m SPD=30m/s ok=(True,True)
+ 1945.79s  ★★ MODE: SEARCH → PRE_DIVE (t=1945.8s AGL=240.6 V=29.2 看車俯角=— 偵測水平距=— 虛擬水平距=416m pitch_cmd=-30.0 hdg_cmd=2.0)
+ 1945.79s  TECS 高度目標 → 140m (背景發送/PRE_DIVE)
+ 1945.80s  雲台狀態 → PRE_DIVE: 模式鍵 '2'
+ 1945.82s  TECS 高度目標 → 140m 完成/PRE_DIVE ok=(True,True)
+ 1945.85s  雲台回報模式 '2' 已確認 (要求後 0.05s)
+ 1946.29s  ★ 雲台鎖定到位 pitch=-28.6° (要求後 0.48s, 任務狀態 PRE_DIVE)
+ 1947.63s  ★★ MODE: PRE_DIVE → DIVE (t=1947.6s AGL=234.3 V=24.0 看車俯角=— 偵測水平距=— 虛擬水平距=384m pitch_cmd=-30.0 hdg_cmd=2.1)
+ 1947.63s  雲台狀態 → DIVE: 模式鍵 '2'
+ 1952.63s  ★★ MODE: DIVE → PULLOUT (t=1952.6s AGL=148.7 V=37.0 看車俯角=— 偵測水平距=— 虛擬水平距=268m pitch_cmd=+0.0 hdg_cmd=5.4)
+ 1952.64s  TECS 高度目標 → 140m (背景發送/PULLOUT)
+ 1952.64s  雲台狀態 → PULLOUT: 模式鍵 不要求
+ 1952.65s  ★★★ 成績: miss = 43.75 m (lon -43.27, lat -6.47) — 對虛擬目標
+ 1952.66s  TECS 高度目標 → 140m 完成/PULLOUT ok=(True,True)
+ 1953.13s  ★★ MODE: PULLOUT → DONE (t=1953.1s AGL=140.0 V=35.2 看車俯角=— 偵測水平距=— 虛擬水平距=255m pitch_cmd=+0.0 hdg_cmd=5.4)
+ 1953.13s  雲台狀態 → DONE: 模式鍵 '1'
+ 1953.19s  雲台回報模式 '1' 已確認 (要求後 0.05s)
+ 1954.57s  ★ 離開 GUIDED (fc_mode=FBWA) — 第 2 趟 mode=DONE (1s 內沒回來就重置)
+ 1954.57s  雲台狀態 → STANDBY: 模式鍵 不要求
+ 1955.59s  任務重置 — 下次撥 GUIDED = 第 3 趟 (重新偵測目標; 虛擬目標回到起點)
+ 2122.33s  ★ GUIDED 上升沿 — 種點 + ARM (第 3 趟任務開始)
+ 2122.33s  切 GUIDED 時離目標起點 615 m
+ 2122.34s  種點(移動): 虛擬目標起點 NED=(0.0,0.0) 方位 0.0° 速度 10.0 m/s
+ 2122.34s  TECS 目標預送 (背景) ALT=241m SPD=30m/s
+ 2122.34s  雲台狀態 → SEARCH: 模式鍵 '1'
+ 2122.35s  雲台回報模式 '1' 已確認 (要求後 0.00s)
+ 2122.37s  TECS 目標預送完成 ALT=241m SPD=30m/s ok=(True,True)
+ 2134.91s  ★★ MODE: SEARCH → PRE_DIVE (t=2134.9s AGL=239.8 V=30.4 看車俯角=— 偵測水平距=— 虛擬水平距=416m pitch_cmd=-30.0 hdg_cmd=0.8)
+ 2134.92s  TECS 高度目標 → 140m (背景發送/PRE_DIVE)
+ 2134.92s  雲台狀態 → PRE_DIVE: 模式鍵 '2'
+ 2134.94s  TECS 高度目標 → 140m 完成/PRE_DIVE ok=(True,True)
+ 2134.99s  雲台回報模式 '2' 已確認 (要求後 0.06s)
+ 2135.45s  ★ 雲台鎖定到位 pitch=-28.6° (要求後 0.53s, 任務狀態 PRE_DIVE)
+ 2136.79s  ★★ MODE: PRE_DIVE → DIVE (t=2136.8s AGL=232.5 V=27.2 看車俯角=— 偵測水平距=— 虛擬水平距=383m pitch_cmd=-30.0 hdg_cmd=0.9)
+ 2136.80s  雲台狀態 → DIVE: 模式鍵 '2'
+ 2141.95s  ★★ MODE: DIVE → PULLOUT (t=2142.0s AGL=148.4 V=38.8 看車俯角=— 偵測水平距=— 虛擬水平距=259m pitch_cmd=+0.0 hdg_cmd=1.1)
+ 2141.96s  TECS 高度目標 → 140m (背景發送/PULLOUT)
+ 2141.96s  雲台狀態 → PULLOUT: 模式鍵 不要求
+ 2141.96s  ★★★ 成績: miss = 15.67 m (lon -11.72, lat +10.41) — 對虛擬目標
+ 2141.98s  TECS 高度目標 → 140m 完成/PULLOUT ok=(True,True)
+ 2142.47s  ★★ MODE: PULLOUT → DONE (t=2142.5s AGL=139.3 V=42.3 看車俯角=— 偵測水平距=— 虛擬水平距=244m pitch_cmd=+0.0 hdg_cmd=1.1)
+ 2142.47s  雲台狀態 → DONE: 模式鍵 '1'
+ 2142.53s  雲台回報模式 '1' 已確認 (要求後 0.04s)
+ 2144.27s  ★ 離開 GUIDED (fc_mode=FBWA) — 第 3 趟 mode=DONE (1s 內沒回來就重置)
+ 2144.27s  雲台狀態 → STANDBY: 模式鍵 不要求
+ 2145.27s  任務重置 — 下次撥 GUIDED = 第 4 趟 (重新偵測目標; 虛擬目標回到起點)
+ 2998.24s  [UARTVision] ★ 串口錯誤: read failed: device reports readiness to read but returned no data (device disconnected or multiple access on port?) → 關閉後重開
+ 2998.26s  [UARTVision] ★ 開不了 /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0: [Errno 2] could not open port /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0: [Errno 2] No such file or directory: '/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0' (第 1 次, 每 1 s 重試)
+ 3000.22s  [UARTVision] ★★ RX 斷線: 2.0s 沒收到任何 byte (埠 存在, 串口 ★關閉, 累計 RX 8218504 / TX 26988 bytes, 最後封包 id=62505)
+ 3000.29s  [UARTVision] 已開啟 /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0 @ 115200 8N1 (失敗 2 次後恢復)
+ 3000.30s  [UARTVision] RX 恢復: 中斷 2.1s, 期間 TX 送出 18 bytes
+ 3005.41s  [UARTVision] ★★ RX 斷線: 2.0s 沒收到任何 byte (埠 存在, 串口 開著, 累計 RX 8227134 / TX 27042 bytes, 驅動 rx=0 frame=0 brk=0 overrun=0, 最後封包 id=62505)
+ 3005.55s  ★★ 雲台視覺資料鏈中斷: 2.1s 沒收到有效封包 (串口 /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0 已開啟, 收 8227134 bytes, CRC 錯 1, 串口錯 2) ← 控制不受影響
+ 3035.42s  [UARTVision] ★ RX 仍斷線 32s; TX 期間送出 270 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3065.43s  [UARTVision] ★ RX 仍斷線 62s; TX 期間送出 540 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3095.44s  [UARTVision] ★ RX 仍斷線 92s; TX 期間送出 810 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3124.90s  [UARTVision] RX 恢復: 中斷 121.5s, 期間 TX 送出 1080 bytes
+ 3126.90s  [UARTVision] ★★ RX 斷線: 2.0s 沒收到任何 byte (埠 存在, 串口 開著, 累計 RX 8227135 / TX 28140 bytes, 驅動 rx=0 frame=0 brk=0 overrun=0, 最後封包 id=62505)
+ 3156.90s  [UARTVision] ★ RX 仍斷線 32s; TX 期間送出 270 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3166.31s  [UARTVision] RX 恢復: 中斷 41.4s, 期間 TX 送出 342 bytes
+ 3168.31s  [UARTVision] ★★ RX 斷線: 2.0s 沒收到任何 byte (埠 存在, 串口 開著, 累計 RX 8227136 / TX 28500 bytes, 驅動 rx=0 frame=0 brk=0 overrun=0, 最後封包 id=62505)
+ 3183.15s  [UARTVision] RX 恢復: 中斷 16.8s, 期間 TX 送出 144 bytes
+ 3186.68s  [UARTVision] ★★ RX 斷線: 2.0s 沒收到任何 byte (埠 存在, 串口 開著, 累計 RX 8227151 / TX 28662 bytes, 驅動 rx=0 frame=0 brk=0 overrun=0, 最後封包 id=62505)
+ 3216.70s  [UARTVision] ★ RX 仍斷線 32s; TX 期間送出 270 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3246.70s  [UARTVision] ★ RX 仍斷線 62s; TX 期間送出 540 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3276.71s  [UARTVision] ★ RX 仍斷線 92s; TX 期間送出 810 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3300.30s  [UARTVision] ★ 串口錯誤: read failed: device reports readiness to read but returned no data (device disconnected or multiple access on port?) → 關閉後重開
+ 3300.32s  [UARTVision] ★ 開不了 /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0: [Errno 19] could not open port /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0: [Errno 19] No such device: '/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0' (第 1 次, 每 1 s 重試)
+ 3301.34s  [UARTVision] 已開啟 /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0 @ 115200 8N1 (失敗 1 次後恢復)
+ 3306.72s  [UARTVision] ★ RX 仍斷線 122s; TX 期間送出 1080 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3324.24s  [UARTVision] RX 恢復: 中斷 139.6s, 期間 TX 送出 1242 bytes
+ 3326.45s  [UARTVision] ★★ RX 斷線: 2.0s 沒收到任何 byte (埠 存在, 串口 開著, 累計 RX 8227154 / TX 29922 bytes, 驅動 rx=0 frame=0 brk=0 overrun=0, 最後封包 id=62505)
+ 3337.67s  [UARTVision] ★ 串口錯誤: read failed: device reports readiness to read but returned no data (device disconnected or multiple access on port?) → 關閉後重開
+ 3337.69s  [UARTVision] ★ 開不了 /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0: [Errno 2] could not open port /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0: [Errno 2] No such file or directory: '/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0' (第 1 次, 每 1 s 重試)
+ 3338.72s  [UARTVision] 已開啟 /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0 @ 115200 8N1 (失敗 1 次後恢復)
+ 3356.45s  [UARTVision] ★ RX 仍斷線 32s; TX 期間送出 270 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3356.82s  [UARTVision] RX 恢復: 中斷 32.4s, 期間 TX 送出 270 bytes
+ 3358.83s  [UARTVision] ★★ RX 斷線: 2.0s 沒收到任何 byte (埠 存在, 串口 開著, 累計 RX 8227155 / TX 30210 bytes, 驅動 rx=0 frame=0 brk=0 overrun=0, 最後封包 id=62505)
+ 3388.83s  [UARTVision] ★ RX 仍斷線 32s; TX 期間送出 270 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3418.84s  [UARTVision] ★ RX 仍斷線 62s; TX 期間送出 540 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3448.84s  [UARTVision] ★ RX 仍斷線 92s; TX 期間送出 810 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3478.85s  [UARTVision] ★ RX 仍斷線 122s; TX 期間送出 1080 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3508.86s  [UARTVision] ★ RX 仍斷線 152s; TX 期間送出 1350 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3538.86s  [UARTVision] ★ RX 仍斷線 182s; TX 期間送出 1620 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3568.87s  [UARTVision] ★ RX 仍斷線 212s; TX 期間送出 1890 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3598.87s  [UARTVision] ★ RX 仍斷線 242s; TX 期間送出 2160 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3628.88s  [UARTVision] ★ RX 仍斷線 272s; TX 期間送出 2430 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3658.88s  [UARTVision] ★ RX 仍斷線 302s; TX 期間送出 2700 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3688.88s  [UARTVision] ★ RX 仍斷線 332s; TX 期間送出 2970 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3718.89s  [UARTVision] ★ RX 仍斷線 362s; TX 期間送出 3240 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3748.90s  [UARTVision] ★ RX 仍斷線 392s; TX 期間送出 3510 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3778.91s  [UARTVision] ★ RX 仍斷線 422s; TX 期間送出 3780 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3808.91s  [UARTVision] ★ RX 仍斷線 452s; TX 期間送出 4050 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3838.92s  [UARTVision] ★ RX 仍斷線 482s; TX 期間送出 4302 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3868.92s  [UARTVision] ★ RX 仍斷線 512s; TX 期間送出 4572 bytes (我們這邊有在送); 驅動 rx=0 frame=0 brk=0
+ 3876.22s  雲台視覺 UART 統計: {'frames': 89782, 'clock': 1497, 'bytes': 8227155, 'header': 0, 'crc': 1, 'payload': 0, 'discarded': 106, 'reopen': 4, 'mode_tx': 6, 'serial_err': 4, 'open_fail': 5, 'tx_bytes': 34854, 'rx_gaps': 8}
+ 3876.23s  程式結束 mode=SEARCH errors=0 時長 3876.2s

@@ -1,0 +1,206 @@
+# 1970-01-02 13:10:47  埠 /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0 -> /dev/ttyUSB0  存在=True
+
+$ dmesg -T  (exit 1)
+dmesg: read kernel buffer failed: Operation not permitted
+
+$ journalctl -k -n 200 --no-pager -o short-iso  (exit 0)
+1970-01-02T13:10:10+0800 yuan-6n0cnx kernel: PHL: TX Pause - Reason(9) for band-0, final tx_cfg(0x0000)
+1970-01-02T13:10:10+0800 yuan-6n0cnx kernel: PHL: Using band:1 central channel 149 for primary channel 149 BW 0
+1970-01-02T13:10:10+0800 yuan-6n0cnx kernel: PHL: rtw_hal_set_ch_bw phy_idx:0, band:1, ch:149, bw:0, offset:0
+1970-01-02T13:10:10+0800 yuan-6n0cnx kernel: PHL: rtw_hal_reset: phy_idx(0) band_idx(0)
+1970-01-02T13:10:10+0800 yuan-6n0cnx kernel: PHL: TX Un-Pause - Reason(9) for band-0, final tx_cfg(0x0100)
+1970-01-02T13:10:10+0800 yuan-6n0cnx kernel: PHL: [DBG_RFK]rtw_hal_rf_chl_rfk_trigger: phy_idx(0), rt_type(2)
+1970-01-02T13:10:10+0800 yuan-6n0cnx kernel: PHL: [DBG_RFK]rtw_hal_rf_chl_rfk_trigger: RFK take 0 (ms)
+1970-01-02T13:10:10+0800 yuan-6n0cnx kernel: PHL: rtw_hal_set_ch_bw: Switch chdef done, rt_type:Y, frc_switch(0)
+1970-01-02T13:10:10+0800 yuan-6n0cnx kernel: PHL: [SCAN] band:1 chan:149 bw:0 offset:0 duration:100 (ms)
+1970-01-02T13:10:10+0800 yuan-6n0cnx kernel: PHL: _phl_mrc_module_swch_done_hdlr[0]: MSG_EVT_SWCH_DONE
+1970-01-02T13:10:10+0800 yuan-6n0cnx kernel: PHL:         [cmd_scan]:: TimeIntvl: 2828 
+1970-01-02T13:10:10+0800 yuan-6n0cnx kernel: RTW: scan_ch_ready_cb: band=1, ch=149
+1970-01-02T13:10:10+0800 yuan-6n0cnx kernel: PHL:         MSG_EVT_SWCH_DONE :: duration=100
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _cmd_scan_timer: band_idx=0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         [cmd_scan]:: TimeIntvl: 2932 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [0]MSG_EVT_LISTEN_STATE_EXPIRE 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _phl_mrc_module_swch_start_hdlr[0]: MSG_EVT_SWCH_START
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         [cmd_scan]:: TimeIntvl: 2932 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [0]MSG_EVT_SWCH_START 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _cmd_scan_select_chnl:[0] repeat[0] ch_idx=[34], remain=[6], ch_number=153, scan_mode= Non-OP
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_reset: phy_idx(0) band_idx(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: TX Pause - Reason(9) for band-0, final tx_cfg(0x0000)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: Using band:1 central channel 153 for primary channel 153 BW 0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_set_ch_bw phy_idx:0, band:1, ch:153, bw:0, offset:0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_reset: phy_idx(0) band_idx(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: TX Un-Pause - Reason(9) for band-0, final tx_cfg(0x0100)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [DBG_RFK]rtw_hal_rf_chl_rfk_trigger: phy_idx(0), rt_type(2)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [DBG_RFK]rtw_hal_rf_chl_rfk_trigger: RFK take 0 (ms)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_set_ch_bw: Switch chdef done, rt_type:Y, frc_switch(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [SCAN] band:1 chan:153 bw:0 offset:0 duration:100 (ms)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _phl_mrc_module_swch_done_hdlr[0]: MSG_EVT_SWCH_DONE
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         [cmd_scan]:: TimeIntvl: 2932 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: RTW: scan_ch_ready_cb: band=1, ch=153
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         MSG_EVT_SWCH_DONE :: duration=100
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _cmd_scan_timer: band_idx=0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         [cmd_scan]:: TimeIntvl: 3036 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [0]MSG_EVT_LISTEN_STATE_EXPIRE 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _phl_mrc_module_swch_start_hdlr[0]: MSG_EVT_SWCH_START
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         [cmd_scan]:: TimeIntvl: 3036 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [0]MSG_EVT_SWCH_START 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _cmd_scan_select_chnl:[0] repeat[0] ch_idx=[35], remain=[5], ch_number=157, scan_mode= Non-OP
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_reset: phy_idx(0) band_idx(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: TX Pause - Reason(9) for band-0, final tx_cfg(0x0000)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: Using band:1 central channel 157 for primary channel 157 BW 0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_set_ch_bw phy_idx:0, band:1, ch:157, bw:0, offset:0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_reset: phy_idx(0) band_idx(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: TX Un-Pause - Reason(9) for band-0, final tx_cfg(0x0100)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [DBG_RFK]rtw_hal_rf_chl_rfk_trigger: phy_idx(0), rt_type(2)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [DBG_RFK]rtw_hal_rf_chl_rfk_trigger: RFK take 0 (ms)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_set_ch_bw: Switch chdef done, rt_type:Y, frc_switch(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [SCAN] band:1 chan:157 bw:0 offset:0 duration:100 (ms)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _phl_mrc_module_swch_done_hdlr[0]: MSG_EVT_SWCH_DONE
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         [cmd_scan]:: TimeIntvl: 3036 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: RTW: scan_ch_ready_cb: band=1, ch=157
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         MSG_EVT_SWCH_DONE :: duration=100
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _cmd_scan_timer: band_idx=0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         [cmd_scan]:: TimeIntvl: 3140 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [0]MSG_EVT_LISTEN_STATE_EXPIRE 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _phl_mrc_module_swch_start_hdlr[0]: MSG_EVT_SWCH_START
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         [cmd_scan]:: TimeIntvl: 3140 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [0]MSG_EVT_SWCH_START 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _cmd_scan_select_chnl:[0] repeat[0] ch_idx=[36], remain=[4], ch_number=161, scan_mode= Non-OP
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_reset: phy_idx(0) band_idx(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: TX Pause - Reason(9) for band-0, final tx_cfg(0x0000)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: Using band:1 central channel 161 for primary channel 161 BW 0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_set_ch_bw phy_idx:0, band:1, ch:161, bw:0, offset:0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_reset: phy_idx(0) band_idx(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: TX Un-Pause - Reason(9) for band-0, final tx_cfg(0x0100)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [DBG_RFK]rtw_hal_rf_chl_rfk_trigger: phy_idx(0), rt_type(2)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [DBG_RFK]rtw_hal_rf_chl_rfk_trigger: RFK take 0 (ms)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_set_ch_bw: Switch chdef done, rt_type:Y, frc_switch(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_notification: event(23), hw_idx(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [SCAN] band:1 chan:161 bw:0 offset:0 duration:50 (ms)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _phl_mrc_module_swch_done_hdlr[0]: MSG_EVT_SWCH_DONE
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         [cmd_scan]:: TimeIntvl: 3140 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: RTW: scan_ch_ready_cb: band=1, ch=161
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         MSG_EVT_SWCH_DONE :: duration=50
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _cmd_scan_timer: band_idx=0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         [cmd_scan]:: TimeIntvl: 3192 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [0]MSG_EVT_LISTEN_STATE_EXPIRE 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _phl_mrc_module_swch_start_hdlr[0]: MSG_EVT_SWCH_START
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         [cmd_scan]:: TimeIntvl: 3192 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [0]MSG_EVT_SWCH_START 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _cmd_scan_select_chnl:[0] repeat[0] ch_idx=[37], remain=[3], ch_number=165, scan_mode= Non-OP
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_reset: phy_idx(0) band_idx(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: TX Pause - Reason(9) for band-0, final tx_cfg(0x0000)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: Using band:1 central channel 165 for primary channel 165 BW 0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_set_ch_bw phy_idx:0, band:1, ch:165, bw:0, offset:0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_reset: phy_idx(0) band_idx(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: TX Un-Pause - Reason(9) for band-0, final tx_cfg(0x0100)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [DBG_RFK]rtw_hal_rf_chl_rfk_trigger: phy_idx(0), rt_type(2)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [DBG_RFK]rtw_hal_rf_chl_rfk_trigger: RFK take 0 (ms)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_set_ch_bw: Switch chdef done, rt_type:Y, frc_switch(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [SCAN] band:1 chan:165 bw:0 offset:0 duration:100 (ms)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _phl_mrc_module_swch_done_hdlr[0]: MSG_EVT_SWCH_DONE
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         [cmd_scan]:: TimeIntvl: 3192 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: RTW: scan_ch_ready_cb: band=1, ch=165
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         MSG_EVT_SWCH_DONE :: duration=100
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _cmd_scan_timer: band_idx=0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         [cmd_scan]:: TimeIntvl: 3296 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [0]MSG_EVT_LISTEN_STATE_EXPIRE 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _phl_mrc_module_swch_start_hdlr[0]: MSG_EVT_SWCH_START
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         [cmd_scan]:: TimeIntvl: 3296 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [0]MSG_EVT_SWCH_START 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _cmd_scan_select_chnl:[0] repeat[0] ch_idx=[38], remain=[2], ch_number=169, scan_mode= Non-OP
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_reset: phy_idx(0) band_idx(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: TX Pause - Reason(9) for band-0, final tx_cfg(0x0000)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: Using band:1 central channel 169 for primary channel 169 BW 0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_set_ch_bw phy_idx:0, band:1, ch:169, bw:0, offset:0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_reset: phy_idx(0) band_idx(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: TX Un-Pause - Reason(9) for band-0, final tx_cfg(0x0100)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [DBG_RFK]rtw_hal_rf_chl_rfk_trigger: phy_idx(0), rt_type(2)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [DBG_RFK]rtw_hal_rf_chl_rfk_trigger: RFK take 0 (ms)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_set_ch_bw: Switch chdef done, rt_type:Y, frc_switch(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [SCAN] band:1 chan:169 bw:0 offset:0 duration:100 (ms)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _phl_mrc_module_swch_done_hdlr[0]: MSG_EVT_SWCH_DONE
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         [cmd_scan]:: TimeIntvl: 3296 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: RTW: scan_ch_ready_cb: band=1, ch=169
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         MSG_EVT_SWCH_DONE :: duration=100
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _cmd_scan_timer: band_idx=0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         [cmd_scan]:: TimeIntvl: 3400 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [0]MSG_EVT_LISTEN_STATE_EXPIRE 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _phl_mrc_module_swch_start_hdlr[0]: MSG_EVT_SWCH_START
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         [cmd_scan]:: TimeIntvl: 3400 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [0]MSG_EVT_SWCH_START 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _cmd_scan_select_chnl:[0] repeat[0] ch_idx=[39], remain=[1], ch_number=173, scan_mode= Non-OP
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_reset: phy_idx(0) band_idx(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: TX Pause - Reason(9) for band-0, final tx_cfg(0x0000)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: Using band:1 central channel 173 for primary channel 173 BW 0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_set_ch_bw phy_idx:0, band:1, ch:173, bw:0, offset:0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_reset: phy_idx(0) band_idx(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: TX Un-Pause - Reason(9) for band-0, final tx_cfg(0x0100)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [DBG_RFK]rtw_hal_rf_chl_rfk_trigger: phy_idx(0), rt_type(2)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [DBG_RFK]rtw_hal_rf_chl_rfk_trigger: RFK take 0 (ms)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_set_ch_bw: Switch chdef done, rt_type:Y, frc_switch(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [SCAN] band:1 chan:173 bw:0 offset:0 duration:100 (ms)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _phl_mrc_module_swch_done_hdlr[0]: MSG_EVT_SWCH_DONE
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         [cmd_scan]:: TimeIntvl: 3400 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: RTW: scan_ch_ready_cb: band=1, ch=173
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         MSG_EVT_SWCH_DONE :: duration=100
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _cmd_scan_timer: band_idx=0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         [cmd_scan]:: TimeIntvl: 3504 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [0]MSG_EVT_LISTEN_STATE_EXPIRE 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _phl_mrc_module_swch_start_hdlr[0]: MSG_EVT_SWCH_START
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         [cmd_scan]:: TimeIntvl: 3504 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [0]MSG_EVT_SWCH_START 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _cmd_scan_select_chnl:[0] repeat[0] ch_idx=[40], remain=[0], ch_number=177, scan_mode= Non-OP
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_reset: phy_idx(0) band_idx(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: TX Pause - Reason(9) for band-0, final tx_cfg(0x0000)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: Using band:1 central channel 177 for primary channel 177 BW 0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_set_ch_bw phy_idx:0, band:1, ch:177, bw:0, offset:0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_reset: phy_idx(0) band_idx(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: TX Un-Pause - Reason(9) for band-0, final tx_cfg(0x0100)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [DBG_RFK]rtw_hal_rf_chl_rfk_trigger: phy_idx(0), rt_type(2)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [DBG_RFK]rtw_hal_rf_chl_rfk_trigger: RFK take 0 (ms)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_set_ch_bw: Switch chdef done, rt_type:Y, frc_switch(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [SCAN] band:1 chan:177 bw:0 offset:0 duration:100 (ms)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _phl_mrc_module_swch_done_hdlr[0]: MSG_EVT_SWCH_DONE
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         [cmd_scan]:: TimeIntvl: 3504 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: RTW: scan_ch_ready_cb: band=1, ch=177
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         MSG_EVT_SWCH_DONE :: duration=100
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _cmd_scan_timer: band_idx=0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         [cmd_scan]:: TimeIntvl: 3608 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [0]MSG_EVT_LISTEN_STATE_EXPIRE 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _phl_mrc_module_swch_start_hdlr[0]: MSG_EVT_SWCH_START
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         [cmd_scan]:: TimeIntvl: 3608 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [0]MSG_EVT_SWCH_START 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _mrc_module_msg_post_hdl[0]: MSG_EVT_SCAN_END
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_reset: phy_idx(0) band_idx(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: TX Pause - Reason(9) for band-0, final tx_cfg(0x0000)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: Using band:1 central channel 36 for primary channel 36 BW 0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_set_ch_bw phy_idx:0, band:1, ch:36, bw:0, offset:0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_reset: phy_idx(0) band_idx(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: TX Un-Pause - Reason(9) for band-0, final tx_cfg(0x0100)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [DBG_RFK]rtw_hal_rf_chl_rfk_trigger: phy_idx(0), rt_type(3)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [DBG_RFK]rtw_hal_rf_chl_rfk_trigger: RFK take 0 (ms)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_set_ch_bw: Switch chdef done, rt_type:Y, frc_switch(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [BTC], _ntfy_scan_finish(): phy_idx=0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [PS_CMD], _ps_mdl_set_info(): btc req pwr 0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL:         [cmd_scan]:: TimeIntvl: 3608 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [0]MSG_EVT_SCAN_END 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: _cmd_scan_end 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_set_rxfltr_opt_by_mode : band(0), mode(3)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_mac_set_rxfltr_opt_by_mode band(0), mode(3) 
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: TX Un-Pause - Reason(0) for band-0, final tx_cfg(0xffff)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: rtw_hal_notification: event(4), hw_idx(0)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [cmd_scan][0]:: sctrl_idx[0] param->state(0xB), result(0x2)
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: RTW: survey done event(2) wifi band:0 for wlan0-HW_BAND_0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: RTW: scan complete in 3612ms
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: RTW: rtw_indicate_scan_done(wlan0) aborted=0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: RTW: scan_complete_cb(wlan0) takes 3608 ms to scan 41 channels
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: RTW: _rtw_scan_abort_check(wlan0)- _rtw_scan_abort_check....scan_abort:0
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [PS_CMD], MSG_EVT_PHY_IDLE
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [PS_CMD], _pop_busy_req(): current busy req cnt 0.
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [PS_CMD], _cancel_pwr_req(): evt_id 1
+1970-01-02T13:10:11+0800 yuan-6n0cnx kernel: PHL: [PS_CMD], _push_idle_req(): remaining idle req cnt 16.
+1970-01-02T13:10:36+0800 yuan-6n0cnx kernel: RTW: rtw_beacon_hint_expire: change band:5G ch:48 to passive
+1970-01-02T13:10:36+0800 yuan-6n0cnx kernel: RTW: cfg80211_rtw_get_txpower
+1970-01-02T13:10:38+0800 yuan-6n0cnx kernel: RTW: rtw_beacon_hint_expire: change band:5G ch:161 to passive
+1970-01-02T13:10:38+0800 yuan-6n0cnx kernel: RTW: cfg80211_rtw_get_txpower
